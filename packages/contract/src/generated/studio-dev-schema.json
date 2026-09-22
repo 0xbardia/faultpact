@@ -1,0 +1,1315 @@
+{
+  "ctor": {
+    "params": [
+      [
+        "treasury",
+        "address"
+      ],
+      [
+        "guardian",
+        "address"
+      ],
+      [
+        "protocol_fee_bps",
+        "int"
+      ],
+      [
+        "withdrawal_cooldown_seconds",
+        "int"
+      ],
+      [
+        "report_bond",
+        "int"
+      ],
+      [
+        "challenge_bond",
+        "int"
+      ],
+      [
+        "incident_evidence_window_seconds",
+        "int"
+      ],
+      [
+        "incident_challenge_window_seconds",
+        "int"
+      ],
+      [
+        "challenge_evidence_window_seconds",
+        "int"
+      ],
+      [
+        "min_authoritative_reporters",
+        "int"
+      ],
+      [
+        "resolution_timeout_seconds",
+        "int"
+      ],
+      [
+        "max_incident_span_seconds",
+        "int"
+      ]
+    ],
+    "kwparams": {}
+  },
+  "methods": {
+    "accept_guardian": {
+      "params": [],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "accept_protocol_ownership": {
+      "params": [],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "accept_provider_control": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "accept_treasury": {
+      "params": [],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "acknowledge_incident": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "allocate_capital": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ],
+        [
+          "amount",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "attach_incident_report": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ],
+        [
+          "summary",
+          "string"
+        ],
+        [
+          "evidence_uri",
+          "string"
+        ],
+        [
+          "evidence_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "authorize_reporter": {
+      "params": [
+        [
+          "reporter",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "buy_coverage": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ],
+        [
+          "coverage_limit",
+          "int"
+        ],
+        [
+          "duration_seconds",
+          "int"
+        ],
+        [
+          "max_premium",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": true
+    },
+    "calculate_claim_payout": {
+      "params": [
+        [
+          "claim_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "can_finalize_incident": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "bool"
+    },
+    "can_settle_claim": {
+      "params": [
+        [
+          "claim_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "bool"
+    },
+    "cancel_capital_withdrawal": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "challenge_incident": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ],
+        [
+          "reason",
+          "string"
+        ],
+        [
+          "evidence_uri",
+          "string"
+        ],
+        [
+          "evidence_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": true
+    },
+    "create_pact_draft": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ],
+        [
+          "availability_threshold_ppm",
+          "int"
+        ],
+        [
+          "p95_latency_ms",
+          "int"
+        ],
+        [
+          "error_rate_threshold_ppm",
+          "int"
+        ],
+        [
+          "block_lag_threshold",
+          "int"
+        ],
+        [
+          "region_scope",
+          "string"
+        ],
+        [
+          "min_incident_duration_seconds",
+          "int"
+        ],
+        [
+          "claim_window_seconds",
+          "int"
+        ],
+        [
+          "min_coverage_duration_seconds",
+          "int"
+        ],
+        [
+          "max_coverage_duration_seconds",
+          "int"
+        ],
+        [
+          "min_coverage_amount",
+          "int"
+        ],
+        [
+          "max_coverage_amount",
+          "int"
+        ],
+        [
+          "premium_bps_per_year",
+          "int"
+        ],
+        [
+          "deductible_bps",
+          "int"
+        ],
+        [
+          "max_payout_bps",
+          "int"
+        ],
+        [
+          "terms_uri",
+          "string"
+        ],
+        [
+          "terms_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "create_pact_revision": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ],
+        [
+          "availability_threshold_ppm",
+          "int"
+        ],
+        [
+          "p95_latency_ms",
+          "int"
+        ],
+        [
+          "error_rate_threshold_ppm",
+          "int"
+        ],
+        [
+          "block_lag_threshold",
+          "int"
+        ],
+        [
+          "region_scope",
+          "string"
+        ],
+        [
+          "min_incident_duration_seconds",
+          "int"
+        ],
+        [
+          "claim_window_seconds",
+          "int"
+        ],
+        [
+          "min_coverage_duration_seconds",
+          "int"
+        ],
+        [
+          "max_coverage_duration_seconds",
+          "int"
+        ],
+        [
+          "min_coverage_amount",
+          "int"
+        ],
+        [
+          "max_coverage_amount",
+          "int"
+        ],
+        [
+          "premium_bps_per_year",
+          "int"
+        ],
+        [
+          "deductible_bps",
+          "int"
+        ],
+        [
+          "max_payout_bps",
+          "int"
+        ],
+        [
+          "terms_uri",
+          "string"
+        ],
+        [
+          "terms_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "create_service": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ],
+        [
+          "service_type",
+          "string"
+        ],
+        [
+          "name",
+          "string"
+        ],
+        [
+          "metadata_uri",
+          "string"
+        ],
+        [
+          "metadata_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "deallocate_capital": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ],
+        [
+          "amount",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "deposit_capital": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": true
+    },
+    "execute_capital_withdrawal": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "expire_coverage": {
+      "params": [
+        [
+          "coverage_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "file_claim": {
+      "params": [
+        [
+          "coverage_id",
+          "int"
+        ],
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "finalize_incident": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "finalize_inconclusive_timeout": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "get_challenge": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_claim": {
+      "params": [
+        [
+          "claim_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_claimable_balance": {
+      "params": [
+        [
+          "address",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "int"
+    },
+    "get_counters": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_coverage": {
+      "params": [
+        [
+          "coverage_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_evidence": {
+      "params": [
+        [
+          "evidence_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_incident": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_incident_evidence_ids": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "array"
+    },
+    "get_incident_resolution": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_pact": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_pact_capacity": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_pact_terms": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_protocol_config": {
+      "params": [],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_provider": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_provider_stats": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_provider_vault": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "get_service": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "is_authorized_reporter": {
+      "params": [
+        [
+          "reporter",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "bool"
+    },
+    "open_incident": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ],
+        [
+          "observed_start",
+          "int"
+        ],
+        [
+          "observed_end",
+          "int"
+        ],
+        [
+          "summary",
+          "string"
+        ],
+        [
+          "evidence_uri",
+          "string"
+        ],
+        [
+          "evidence_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": true
+    },
+    "pause_new_sales": {
+      "params": [],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "pause_pact_sales": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "pause_service": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "preview_claim_payout": {
+      "params": [
+        [
+          "coverage_id",
+          "int"
+        ],
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "publish_pact": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "quote_coverage": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ],
+        [
+          "coverage_limit",
+          "int"
+        ],
+        [
+          "duration_seconds",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": true,
+      "ret": "dict"
+    },
+    "register_provider": {
+      "params": [
+        [
+          "name",
+          "string"
+        ],
+        [
+          "metadata_uri",
+          "string"
+        ],
+        [
+          "metadata_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "release_earned_premium": {
+      "params": [
+        [
+          "coverage_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "request_capital_withdrawal": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ],
+        [
+          "amount",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "resolve_challenge": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "resolve_incident": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "resume_new_sales": {
+      "params": [],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "resume_pact_sales": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "resume_service": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "retire_pact": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "retire_service": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "revoke_reporter": {
+      "params": [
+        [
+          "reporter",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "seal_evidence_window": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_bonds": {
+      "params": [
+        [
+          "report_bond",
+          "int"
+        ],
+        [
+          "challenge_bond",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_guardian": {
+      "params": [
+        [
+          "new_guardian",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_incident_windows": {
+      "params": [
+        [
+          "incident_evidence_window_seconds",
+          "int"
+        ],
+        [
+          "incident_challenge_window_seconds",
+          "int"
+        ],
+        [
+          "challenge_evidence_window_seconds",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_protocol_fee": {
+      "params": [
+        [
+          "protocol_fee_bps",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_resolution_policy": {
+      "params": [
+        [
+          "min_authoritative_reporters",
+          "int"
+        ],
+        [
+          "resolution_timeout_seconds",
+          "int"
+        ],
+        [
+          "max_incident_span_seconds",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_treasury": {
+      "params": [
+        [
+          "new_treasury",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "set_withdrawal_cooldown": {
+      "params": [
+        [
+          "seconds",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "settle_claim": {
+      "params": [
+        [
+          "claim_id",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "submit_challenge_evidence": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ],
+        [
+          "evidence_type",
+          "string"
+        ],
+        [
+          "evidence_uri",
+          "string"
+        ],
+        [
+          "content_hash",
+          "string"
+        ],
+        [
+          "description",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "submit_evidence": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ],
+        [
+          "evidence_type",
+          "string"
+        ],
+        [
+          "evidence_uri",
+          "string"
+        ],
+        [
+          "content_hash",
+          "string"
+        ],
+        [
+          "description",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "int",
+      "payable": false
+    },
+    "submit_provider_statement": {
+      "params": [
+        [
+          "incident_id",
+          "int"
+        ],
+        [
+          "statement_uri",
+          "string"
+        ],
+        [
+          "statement_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "transfer_protocol_ownership": {
+      "params": [
+        [
+          "new_owner",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "transfer_provider_control": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ],
+        [
+          "new_owner",
+          "address"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "update_pact_draft": {
+      "params": [
+        [
+          "pact_id",
+          "int"
+        ],
+        [
+          "availability_threshold_ppm",
+          "int"
+        ],
+        [
+          "p95_latency_ms",
+          "int"
+        ],
+        [
+          "error_rate_threshold_ppm",
+          "int"
+        ],
+        [
+          "block_lag_threshold",
+          "int"
+        ],
+        [
+          "region_scope",
+          "string"
+        ],
+        [
+          "min_incident_duration_seconds",
+          "int"
+        ],
+        [
+          "claim_window_seconds",
+          "int"
+        ],
+        [
+          "min_coverage_duration_seconds",
+          "int"
+        ],
+        [
+          "max_coverage_duration_seconds",
+          "int"
+        ],
+        [
+          "min_coverage_amount",
+          "int"
+        ],
+        [
+          "max_coverage_amount",
+          "int"
+        ],
+        [
+          "premium_bps_per_year",
+          "int"
+        ],
+        [
+          "deductible_bps",
+          "int"
+        ],
+        [
+          "max_payout_bps",
+          "int"
+        ],
+        [
+          "terms_uri",
+          "string"
+        ],
+        [
+          "terms_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "update_provider_metadata": {
+      "params": [
+        [
+          "provider_id",
+          "int"
+        ],
+        [
+          "metadata_uri",
+          "string"
+        ],
+        [
+          "metadata_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "update_service_metadata": {
+      "params": [
+        [
+          "service_id",
+          "int"
+        ],
+        [
+          "metadata_uri",
+          "string"
+        ],
+        [
+          "metadata_hash",
+          "string"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    },
+    "withdraw_credit": {
+      "params": [
+        [
+          "amount",
+          "int"
+        ]
+      ],
+      "kwparams": {},
+      "readonly": false,
+      "ret": "null",
+      "payable": false
+    }
+  }
+}

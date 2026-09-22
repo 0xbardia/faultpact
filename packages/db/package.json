@@ -1,0 +1,13 @@
+{
+  "name": "@faultpact/db",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@faultpact/shared": "workspace:*",
+    "@prisma/client": "^6.16.2"
+  }
+}

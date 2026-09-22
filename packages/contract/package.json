@@ -1,0 +1,14 @@
+{
+  "name": "@faultpact/contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./legacy": "./dist/legacy.js"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@faultpact/shared": "workspace:*",
+    "genlayer-js": "1.1.8"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "network": "GenLayer Studio Development Preview",
+  "chainId": 61997,
+  "rpc": "https://studio-dev.genlayer.com/api",
+  "contractAddress": "0xeb858957e3C426597245f6b59E260f1cC556Bf13",
+  "sourceSha256": "4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e",
+  "sourceByteLength": 141351,
+  "dependencyPin": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng",
+  "deploymentTransaction": "0x980b1a8949173601c80a2bd2b4a15890ad4b8582e763983f895e48ab8f057554",
+  "schemaFingerprint": "4df42b12a268d9da9eec7faa1579a684ef323e5fd25d6aa5460b9a21044576d8",
+  "verifiedAt": "2026-09-21",
+  "schemaSnapshot": "packages/contract/src/generated/studio-dev-schema.json"
+}

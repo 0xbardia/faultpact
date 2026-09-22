@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">FaultPact system architecture</title>
+  <desc id="desc">Users interact with FaultPact Web and a wallet to reach the frozen GenLayer contract. The contract feeds the indexer and API. Regional probes produce immutable evidence artifacts for authorized reporters.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#111111"/></marker>
+    <style>
+      .box{stroke:#111;stroke-width:2;rx:14;ry:14}
+      .label{font-family:Arial,sans-serif;font-size:18px;fill:#111}
+      .small{font-family:Arial,sans-serif;font-size:14px;fill:#333}
+      .arrow{stroke:#111;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .truth{fill:#111;stroke:#ff5a36}
+      .truthtext{fill:#fff}
+    </style>
+  </defs>
+  <rect width="1280" height="760" fill="#f5f3ee"/>
+  <text x="64" y="72" font-family="Arial,sans-serif" font-size="34" font-weight="700" fill="#111">FaultPact system architecture</text>
+  <text x="64" y="104" class="small">Contract truth, indexed discovery, regional telemetry, and immutable evidence.</text>
+
+  <rect class="box" x="64" y="170" width="170" height="76" fill="#fff"/>
+  <text class="label" x="149" y="204" text-anchor="middle">Users</text>
+  <text class="small" x="149" y="226" text-anchor="middle">providers · customers</text>
+  <rect class="box" x="300" y="170" width="190" height="76" fill="#fff"/>
+  <text class="label" x="395" y="204" text-anchor="middle">FaultPact Web</text>
+  <text class="small" x="395" y="226" text-anchor="middle">Next.js product UI</text>
+  <rect class="box" x="560" y="170" width="170" height="76" fill="#fff"/>
+  <text class="label" x="645" y="204" text-anchor="middle">Wallet</text>
+  <text class="small" x="645" y="226" text-anchor="middle">user-signed actions</text>
+  <rect class="box truth" x="800" y="154" width="270" height="108"/>
+  <text class="label truthtext" x="935" y="194" text-anchor="middle">GenLayer 61997</text>
+  <text class="small truthtext" x="935" y="220" text-anchor="middle">frozen FaultPact contract</text>
+  <text class="small truthtext" x="935" y="242" text-anchor="middle">financial source of truth</text>
+  <path class="arrow" d="M234 208 H300"/><path class="arrow" d="M490 208 H560"/><path class="arrow" d="M730 208 H800"/>
+
+  <rect class="box" x="800" y="360" width="200" height="76" fill="#fff"/>
+  <text class="label" x="900" y="394" text-anchor="middle">Indexer</text>
+  <text class="small" x="900" y="416" text-anchor="middle">reconcile, never decide</text>
+  <rect class="box" x="1060" y="360" width="160" height="76" fill="#fff"/>
+  <text class="label" x="1140" y="394" text-anchor="middle">PostgreSQL</text>
+  <text class="small" x="1140" y="416" text-anchor="middle">index + cache</text>
+  <rect class="box" x="1060" y="500" width="160" height="76" fill="#fff"/>
+  <text class="label" x="1140" y="534" text-anchor="middle">Fastify API</text>
+  <text class="small" x="1140" y="556" text-anchor="middle">typed reads</text>
+  <path class="arrow" d="M935 262 V360"/><path class="arrow" d="M1000 398 H1060"/><path class="arrow" d="M1140 436 V500"/><path class="arrow" d="M1060 538 H395 V246"/>
+
+  <rect class="box" x="64" y="360" width="210" height="76" fill="#fff"/>
+  <text class="label" x="169" y="394" text-anchor="middle">RPC providers</text>
+  <text class="small" x="169" y="416" text-anchor="middle">regional targets</text>
+  <rect class="box" x="334" y="360" width="210" height="76" fill="#fff"/>
+  <text class="label" x="439" y="394" text-anchor="middle">Probe workers</text>
+  <text class="small" x="439" y="416" text-anchor="middle">region-specific identity</text>
+  <rect class="box" x="604" y="360" width="150" height="76" fill="#fff"/>
+  <text class="label" x="679" y="394" text-anchor="middle">Aggregation</text>
+  <text class="small" x="679" y="416" text-anchor="middle">deterministic windows</text>
+  <path class="arrow" d="M274 398 H334"/><path class="arrow" d="M544 398 H604"/>
+  <rect class="box" x="334" y="500" width="210" height="76" fill="#fff"/>
+  <text class="label" x="439" y="534" text-anchor="middle">Evidence artifact</text>
+  <text class="small" x="439" y="556" text-anchor="middle">canonical bytes + SHA-256</text>
+  <rect class="box" x="604" y="500" width="150" height="76" fill="#fff"/>
+  <text class="label" x="679" y="534" text-anchor="middle">/evidence/&lt;sha&gt;</text>
+  <text class="small" x="679" y="556" text-anchor="middle">immutable public bytes</text>
+  <path class="arrow" d="M679 436 V500"/><path class="arrow" d="M544 538 H604"/>
+  <path class="arrow" d="M754 538 H935 V262"/>
+  <text class="small" x="770" y="522">authorized reporter submission</text>
+  <text class="small" x="64" y="690">DB supports discovery, history, and monitoring. It never overrides final contract state.</text>
+</svg>

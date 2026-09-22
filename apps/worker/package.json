@@ -1,0 +1,16 @@
+{
+  "name": "@faultpact/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@faultpact/contract": "workspace:*",
+    "@faultpact/db": "workspace:*",
+    "@faultpact/monitoring": "workspace:*",
+    "@faultpact/shared": "workspace:*",
+    "pino": "^9.10.0"
+  }
+}

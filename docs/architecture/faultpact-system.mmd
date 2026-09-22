@@ -1,0 +1,37 @@
+flowchart TD
+    U[Users and operators]
+    W[FaultPact Web\nNext.js]
+    WALLET[User wallet\nEIP-1193]
+    RPC[GenLayer Studio Dev\nchain 61997]
+    C[⚖ Frozen FaultPact contract\nfinancial source of truth]
+    IDX[Indexer and reconciliation worker]
+    DB[(PostgreSQL\nindexed/cache/monitoring layer)]
+    API[Fastify API\nreads and operational status]
+    PROBES[Regional probe workers\nRPC telemetry]
+    AGG[Deterministic metric windows]
+    ART[Immutable evidence artifact\ncanonical bytes + SHA-256]
+    EVID[Public immutable endpoint\n/evidence/<sha>.json]
+    REP[Authorized reporter\noptional, independently keyed]
+
+    U --> W
+    W --> WALLET
+    WALLET --> RPC
+    RPC --> C
+    C --> IDX
+    IDX --> DB
+    DB --> API
+    API --> W
+
+    PROBES --> AGG
+    AGG --> ART
+    ART --> EVID
+    ART --> REP
+    REP --> C
+
+    C -. "authoritative financial state" .-> W
+    DB -. "indexed discovery, cache, monitoring" .-> W
+
+    classDef truth fill:#111,color:#fff,stroke:#ff5a36,stroke-width:2px;
+    classDef data fill:#f5f3ee,color:#111,stroke:#111;
+    class C truth;
+    class DB,ART,EVID data;

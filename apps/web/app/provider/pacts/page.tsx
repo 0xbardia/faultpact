@@ -1,0 +1,8 @@
+import Link from "next/link";
+import { Shell } from "../../../components/shell";
+import { PageHeader, Panel } from "../../../components/ui";
+import { ActionReview } from "../../../components/actions";
+
+export default function ProviderPactsPage() {
+  return <Shell><main className="content-shell"><PageHeader eyebrow="Provider console / Pact management" title="Publish terms you are prepared to honor." description="Published Pacts are immutable. Revisions are new objects, so review every threshold before your wallet signs." actions={<Link className="button button-quiet" href="/provider">← Provider overview</Link>} /><Panel title="Draft → Review → Publish" kicker="Frozen contract write surface"><p>A draft requires the full final-schema SLA argument set: service, bounded metrics, normalized scope, coverage limits, premium, deductible, and the terms hash. The wallet review must be completed before any publish action.</p><ActionReview method="create_pact_draft" title="Create Pact draft review" description="No example SLA is presented as live data. Enter the final terms only after reading the service and capital state." args={[["service_id", "select indexed Service"], ["region_scope", "global or normalized region"], ["terms_hash", "SHA-256 of terms document"], ["capital", "review available allocation"]]} /></Panel><Panel title="Existing Pact records" kicker="Read-only indexed state"><p className="muted">Published terms cannot be edited in place. Create a revision when the service contract changes.</p><Link className="text-link" href="/pacts">Browse indexed Pacts →</Link></Panel></main></Shell>;
+}

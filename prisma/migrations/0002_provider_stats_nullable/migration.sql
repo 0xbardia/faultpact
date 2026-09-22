@@ -1,0 +1,1 @@
+ALTER TABLE "ProviderStats" ALTER COLUMN "totalPacts" DROP NOT NULL;

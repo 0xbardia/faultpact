@@ -1,0 +1,50 @@
+{
+  "name": "faultpact-platform",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -b && pnpm --filter @faultpact/web typecheck",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @faultpact/web e2e",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "build": "tsc -b && pnpm --filter @faultpact/web build",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "db:migrate": "prisma migrate deploy",
+    "dev": "pnpm --parallel --filter @faultpact/api --filter @faultpact/worker dev",
+    "start": "pnpm --parallel --filter @faultpact/api --filter @faultpact/worker start",
+    "schema:discover": "tsx scripts/discover-schema.ts",
+    "smoke:api": "tsx scripts/smoke-api.ts",
+    "smoke:worker": "tsx scripts/smoke-worker.ts",
+    "web:dev": "pnpm --filter @faultpact/web dev",
+    "web:test": "pnpm --filter @faultpact/web test",
+    "web:build": "pnpm --filter @faultpact/web build"
+  },
+  "dependencies": {
+    "@faultpact/contract": "workspace:*",
+    "@faultpact/db": "workspace:*",
+    "@faultpact/monitoring": "workspace:*",
+    "@faultpact/shared": "workspace:*",
+    "@fastify/swagger": "^9.5.1",
+    "@fastify/swagger-ui": "^5.2.2",
+    "@prisma/client": "^6.16.2",
+    "fastify": "^5.6.1",
+    "genlayer-js": "1.1.8",
+    "pino": "^9.10.0",
+    "prisma": "^6.16.2",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.2",
+    "@typescript-eslint/parser": "^8.46.0",
+    "eslint": "^9.36.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

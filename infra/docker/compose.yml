@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: faultpact
+      POSTGRES_USER: faultpact
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the deployment environment}
+    volumes:
+      - faultpact-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faultpact -d faultpact"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://faultpact:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the deployment environment}@postgres:5432/faultpact?schema=public
+      GENLAYER_RPC_URL: https://studio-dev.genlayer.com/api
+      GENLAYER_CHAIN_ID: "61997"
+      FAULTPACT_CONTRACT_ADDRESS: 0xeb858957e3C426597245f6b59E260f1cC556Bf13
+      FAULTPACT_SOURCE_SHA256: 4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e
+      API_HOST: 0.0.0.0
+      API_PORT: "4310"
+      EVIDENCE_PUBLIC_BASE_URL: https://faultpact.bydx.fun/evidence
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    command: ["sh", "-c", "pnpm db:migrate && node apps/api/dist/main.js"]
+    ports:
+      - "4310:4310"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://faultpact:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in the deployment environment}@postgres:5432/faultpact?schema=public
+      GENLAYER_RPC_URL: https://studio-dev.genlayer.com/api
+      GENLAYER_CHAIN_ID: "61997"
+      FAULTPACT_CONTRACT_ADDRESS: 0xeb858957e3C426597245f6b59E260f1cC556Bf13
+      FAULTPACT_SOURCE_SHA256: 4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e
+      PROBE_REGION: ${PROBE_REGION:-frankfurt}
+      EVIDENCE_PUBLIC_BASE_URL: https://faultpact.bydx.fun/evidence
+      REPORTER_PRIVATE_KEY: ${REPORTER_PRIVATE_KEY:-}
+      AUTO_ONCHAIN_SUBMISSION: "false"
+      MONITOR_MODE: ${MONITOR_MODE:-observe}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    command: ["node", "apps/worker/dist/main.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  faultpact-postgres:

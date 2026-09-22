@@ -1,0 +1,487 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Deployment {
+  id                    Int                    @id @default(autoincrement())
+  network               String
+  chainId               Int
+  contractAddress       String
+  sourceSha256          String
+  sourceByteLength      Int?
+  schemaFingerprint     String?
+  schema                Json?
+  verifiedAt            DateTime?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  protocolSnapshots     ProtocolSnapshot[]
+  providers             Provider[]
+  services              Service[]
+  pacts                 Pact[]
+  coverages             Coverage[]
+  incidents             Incident[]
+  evidence              Evidence[]
+  challenges            Challenge[]
+  claims                Claim[]
+  reporters             ReporterSnapshot[]
+  syncCursors           SyncCursor[]
+  contractSnapshots     ContractSnapshot[]
+  transactions          TransactionRecord[]
+  @@unique([chainId, contractAddress])
+  @@index([chainId])
+}
+
+model ProtocolSnapshot {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int        @unique
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  raw            Json
+  capturedAt     DateTime   @default(now())
+}
+
+model Provider {
+  id             Int          @id @default(autoincrement())
+  deploymentId   Int
+  onchainId      Decimal      @db.Decimal(78, 0)
+  address        String?
+  name           String?
+  status         String?
+  raw            Json
+  indexedAt      DateTime     @default(now())
+  deployment     Deployment   @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  vault          ProviderVault?
+  stats          ProviderStats?
+  services       Service[]
+  pacts          Pact[]
+  @@unique([deploymentId, onchainId])
+  @@index([deploymentId, address])
+}
+
+model ProviderVault {
+  id             Int        @id @default(autoincrement())
+  providerId     Int        @unique
+  totalCapital   Decimal    @db.Decimal(78, 0)
+  allocated      Decimal    @db.Decimal(78, 0)
+  reserved       Decimal    @db.Decimal(78, 0)
+  pending        Decimal    @db.Decimal(78, 0)
+  raw            Json
+  indexedAt      DateTime   @default(now())
+  provider       Provider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+model ProviderStats {
+  id                    Int        @id @default(autoincrement())
+  providerId            Int        @unique
+  totalPacts            Decimal?   @db.Decimal(78, 0)
+  totalCoverages        Decimal    @db.Decimal(78, 0)
+  finalizedIncidents    Decimal    @db.Decimal(78, 0)
+  providerFaultIncidents Decimal   @db.Decimal(78, 0)
+  raw                   Json
+  indexedAt             DateTime   @default(now())
+  provider              Provider   @relation(fields: [providerId], references: [id], onDelete: Cascade)
+}
+
+model Service {
+  id             Int          @id @default(autoincrement())
+  deploymentId   Int
+  providerId     Int?
+  onchainId      Decimal      @db.Decimal(78, 0)
+  serviceType    String?
+  name           String?
+  status         String?
+  metadataUri    String?
+  metadataHash   String?
+  raw            Json
+  indexedAt      DateTime     @default(now())
+  deployment     Deployment   @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  provider       Provider?    @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  pacts          Pact[]
+  incidents      Incident[]
+  monitorTargets MonitorTarget[]
+  @@unique([deploymentId, onchainId])
+  @@index([deploymentId, status])
+}
+
+model Pact {
+  id             Int          @id @default(autoincrement())
+  deploymentId   Int
+  serviceId      Int
+  providerId     Int?
+  onchainId      Decimal      @db.Decimal(78, 0)
+  revision       Decimal?     @db.Decimal(78, 0)
+  status         String?
+  regionScope    String?
+  raw            Json
+  indexedAt      DateTime     @default(now())
+  deployment     Deployment   @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  service        Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  provider       Provider?    @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  terms          PactTerms?
+  capacity       PactCapacity?
+  coverages      Coverage[]
+  @@unique([deploymentId, onchainId])
+  @@index([serviceId, status])
+}
+
+model PactTerms {
+  id                         Int       @id @default(autoincrement())
+  pactId                     Int       @unique
+  availabilityThresholdPpm   Decimal?  @db.Decimal(78, 0)
+  p95LatencyMs               Decimal?  @db.Decimal(78, 0)
+  errorRateThresholdPpm      Decimal?  @db.Decimal(78, 0)
+  blockLagThreshold          Decimal?  @db.Decimal(78, 0)
+  minIncidentDurationSeconds Decimal?  @db.Decimal(78, 0)
+  claimWindowSeconds         Decimal?  @db.Decimal(78, 0)
+  minCoverageDurationSeconds Decimal?  @db.Decimal(78, 0)
+  maxCoverageDurationSeconds Decimal?  @db.Decimal(78, 0)
+  minCoverageAmount          Decimal?  @db.Decimal(78, 0)
+  maxCoverageAmount          Decimal?  @db.Decimal(78, 0)
+  premiumBpsPerYear           Decimal?  @db.Decimal(78, 0)
+  deductibleBps              Decimal?  @db.Decimal(78, 0)
+  maxPayoutBps               Decimal?  @db.Decimal(78, 0)
+  termsUri                   String?
+  termsHash                  String?
+  raw                        Json
+  indexedAt                  DateTime  @default(now())
+  pact                       Pact      @relation(fields: [pactId], references: [id], onDelete: Cascade)
+}
+
+model PactCapacity {
+  id             Int       @id @default(autoincrement())
+  pactId         Int       @unique
+  totalAllocated Decimal   @db.Decimal(78, 0)
+  totalReserved  Decimal   @db.Decimal(78, 0)
+  remaining      Decimal   @db.Decimal(78, 0)
+  raw            Json
+  indexedAt      DateTime  @default(now())
+  pact           Pact      @relation(fields: [pactId], references: [id], onDelete: Cascade)
+}
+
+model Coverage {
+  id             Int          @id @default(autoincrement())
+  deploymentId   Int
+  pactId         Int
+  onchainId      Decimal      @db.Decimal(78, 0)
+  buyerAddress   String?
+  status         String?
+  coverageLimit  Decimal      @db.Decimal(78, 0)
+  startAt        DateTime?
+  endAt          DateTime?
+  raw            Json
+  indexedAt      DateTime     @default(now())
+  deployment     Deployment   @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  pact           Pact         @relation(fields: [pactId], references: [id], onDelete: Cascade)
+  claims         Claim[]
+  @@unique([deploymentId, onchainId])
+  @@index([buyerAddress, status])
+}
+
+model Incident {
+  id             Int                 @id @default(autoincrement())
+  deploymentId   Int
+  serviceId      Int
+  onchainId      Decimal             @db.Decimal(78, 0)
+  status         String?
+  observedStart  Decimal             @db.Decimal(78, 0)
+  observedEnd    Decimal             @db.Decimal(78, 0)
+  reportBond     Decimal?            @db.Decimal(78, 0)
+  challengeBond  Decimal?            @db.Decimal(78, 0)
+  openClaims     Decimal?            @db.Decimal(78, 0)
+  raw            Json
+  indexedAt      DateTime            @default(now())
+  deployment     Deployment          @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  service        Service             @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  resolution     IncidentResolution?
+  evidence      Evidence[]
+  challenges    Challenge[]
+  claims        Claim[]
+  @@unique([deploymentId, onchainId])
+  @@index([serviceId, status])
+  @@index([observedStart, observedEnd])
+}
+
+model IncidentResolution {
+  id             Int        @id @default(autoincrement())
+  incidentId     Int        @unique
+  status         String?
+  factStatus     String?
+  faultDomain    String?
+  scope          String?
+  incidentStart  Decimal?   @db.Decimal(78, 0)
+  incidentEnd    Decimal?   @db.Decimal(78, 0)
+  duration       Decimal?   @db.Decimal(78, 0)
+  p95LatencyMs   Decimal?   @db.Decimal(78, 0)
+  availabilityPpm Decimal?  @db.Decimal(78, 0)
+  errorRatePpm   Decimal?   @db.Decimal(78, 0)
+  blockLag       Decimal?   @db.Decimal(78, 0)
+  supportIds     Json?
+  raw            Json
+  indexedAt      DateTime   @default(now())
+  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+}
+
+model Evidence {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  incidentId     Int
+  challengeId    Int?
+  onchainId      Decimal    @db.Decimal(78, 0)
+  evidenceType   String?
+  evidenceUri    String?
+  contentHash    String?
+  description    String?
+  reporter       String?
+  authoritative  Boolean    @default(false)
+  reporterAuthorized Boolean @default(false)
+  fetchStatus    String?
+  hashStatus     String?
+  schemaStatus   String?
+  usable         Boolean    @default(false)
+  artifactSha256 String?
+  raw            Json
+  indexedAt      DateTime   @default(now())
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  challenge      Challenge? @relation(fields: [challengeId], references: [id], onDelete: SetNull)
+  @@unique([deploymentId, onchainId])
+  @@index([incidentId, authoritative, usable])
+  @@index([contentHash])
+}
+
+model Challenge {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  incidentId     Int        @unique
+  challenger     String?
+  status         String?
+  challengeBond  Decimal?   @db.Decimal(78, 0)
+  raw            Json
+  indexedAt      DateTime   @default(now())
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  evidence       Evidence[]
+}
+
+model Claim {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  coverageId     Int
+  incidentId     Int
+  onchainId      Decimal    @db.Decimal(78, 0)
+  claimant       String?
+  status         String?
+  payout         Decimal?   @db.Decimal(78, 0)
+  raw            Json
+  indexedAt      DateTime   @default(now())
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  coverage       Coverage   @relation(fields: [coverageId], references: [id], onDelete: Cascade)
+  incident       Incident   @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  @@unique([deploymentId, onchainId])
+  @@unique([coverageId, incidentId])
+  @@index([claimant, status])
+}
+
+model ReporterSnapshot {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  address        String
+  authorized     Boolean
+  checkedAt      DateTime   @default(now())
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  @@unique([deploymentId, address])
+}
+
+model SyncCursor {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  entityKind     String
+  nextId         Decimal    @db.Decimal(78, 0)
+  lastSuccessAt  DateTime?
+  lastError      String?
+  status         String     @default("UNKNOWN")
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  @@unique([deploymentId, entityKind])
+}
+
+model ContractSnapshot {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  chainId        Int
+  blockReference String?
+  config         Json?
+  counters       Json?
+  capturedAt     DateTime   @default(now())
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  @@index([deploymentId, capturedAt])
+}
+
+model TransactionRecord {
+  id             Int        @id @default(autoincrement())
+  deploymentId   Int
+  txHash         String     @unique
+  method         String
+  initiator      String?
+  entityKind     String?
+  entityId       Decimal?   @db.Decimal(78, 0)
+  status         String
+  decisionStatus String?
+  submittedAt    DateTime   @default(now())
+  finalizedAt    DateTime?
+  error          String?
+  raw            Json?
+  deployment     Deployment @relation(fields: [deploymentId], references: [id], onDelete: Cascade)
+  @@index([deploymentId, status])
+}
+
+model MonitorTarget {
+  id             Int        @id @default(autoincrement())
+  serviceId      Int?
+  name           String
+  endpointUrl    String
+  expectedChainId Int
+  region         String
+  profile        Json
+  enabled        Boolean    @default(true)
+  intervalMs     Int
+  timeoutMs      Int
+  evidenceMode   String     @default("observe")
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  service        Service?   @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  samples        ProbeSample[]
+  aggregates     MetricAggregate[]
+  candidates     IncidentCandidate[]
+  submissionAttempts EvidenceSubmissionAttempt[]
+  @@index([enabled, region])
+}
+
+model ProbeSample {
+  id             BigInt     @id @default(autoincrement())
+  targetId       Int
+  probeId        String     @unique
+  region         String
+  observedAt     DateTime   @default(now())
+  method         String
+  success        Boolean
+  latencyMs      Int?
+  httpStatus     Int?
+  expectedChainId Int?
+  observedChainId Int?
+  targetBlock    Decimal?   @db.Decimal(78, 0)
+  referenceBlock Decimal?   @db.Decimal(78, 0)
+  blockLag       Decimal?   @db.Decimal(78, 0)
+  blockLagKnown  Boolean    @default(false)
+  stale          Boolean    @default(false)
+  errorCode      String?
+  errorMessage   String?
+  raw            Json?
+  target         MonitorTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  @@index([targetId, observedAt])
+}
+
+model MetricAggregate {
+  id             BigInt     @id @default(autoincrement())
+  targetId       Int
+  windowSeconds  Int
+  windowStart    DateTime
+  windowEnd      DateTime
+  sampleCount    Int
+  successCount   Int
+  failureCount   Int
+  availabilityPpm Decimal
+  errorRatePpm   Decimal
+  p50LatencyMs   Int?
+  p95LatencyMs   Int?
+  maxLatencyMs   Int?
+  latestBlock    Decimal?   @db.Decimal(78, 0)
+  referenceBlock Decimal?   @db.Decimal(78, 0)
+  blockLagKnown  Boolean    @default(false)
+  stale          Boolean    @default(false)
+  inputs         Json
+  createdAt      DateTime   @default(now())
+  target         MonitorTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  @@unique([targetId, windowSeconds, windowStart])
+  @@index([targetId, windowEnd])
+}
+
+model IncidentCandidate {
+  id             BigInt     @id @default(autoincrement())
+  targetId       Int
+  serviceId      Int?
+  state          String
+  reason         String?
+  firstObservedAt DateTime?
+  lastObservedAt DateTime?
+  consecutiveFailures Int    @default(0)
+  signal         Json
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  target         MonitorTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  @@index([targetId, state])
+}
+
+model EvidenceArtifact {
+  id             BigInt     @id @default(autoincrement())
+  sha256         String     @unique
+  contentType    String
+  sizeBytes      Int
+  schemaVersion  String
+  serviceId      Decimal?   @db.Decimal(78, 0)
+  region         String
+  windowStart    DateTime?
+  windowEnd      DateTime?
+  bytes          Bytes      @db.ByteA
+  metadata       Json
+  createdAt      DateTime   @default(now())
+  submissionAttempts EvidenceSubmissionAttempt[]
+  @@index([serviceId, region])
+}
+
+model EvidenceSubmissionAttempt {
+  id             BigInt     @id @default(autoincrement())
+  targetId       Int?
+  artifactId     BigInt
+  incidentId     Decimal?   @db.Decimal(78, 0)
+  reporter       String?
+  txHash         String?
+  status         String
+  attemptNo      Int
+  error          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  target         MonitorTarget? @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  artifact       EvidenceArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  @@unique([artifactId, attemptNo])
+  @@index([incidentId, status])
+}
+
+model WorkerHeartbeat {
+  id             Int        @id @default(autoincrement())
+  workerId       String     @unique
+  role           String
+  region         String
+  mode           String
+  lastProbeAt    DateTime?
+  lastSyncAt     DateTime?
+  lastEvidenceAt DateTime?
+  status         String
+  details        Json?
+  updatedAt      DateTime   @updatedAt
+}
+
+model ReconciliationRecord {
+  id             BigInt     @id @default(autoincrement())
+  entityKind     String
+  entityId       Decimal    @db.Decimal(78, 0)
+  dbStatus       String?
+  chainStatus    String?
+  action         String
+  details        Json?
+  createdAt      DateTime   @default(now())
+  @@index([entityKind, entityId, createdAt])
+}
