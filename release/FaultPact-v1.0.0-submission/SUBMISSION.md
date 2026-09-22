@@ -88,6 +88,10 @@ match the frozen reporter/provenance and structured schema rules.
 
 These blockers prevent final system certification and release tagging.
 
+The unreleased candidate is published on `main` at commit
+`f5b9e4e08075ac584bf4f7f319ec36e78aacd1ad`. No `v1.0.0` tag or GitHub release
+was created.
+
 ## Screenshots
 
 See `screenshots/` for curated production read-surface captures:

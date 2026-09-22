@@ -257,9 +257,16 @@ users that funds were received before the relevant final state.
 ## GitHub Publication
 
 The public repository `https://github.com/0xbardia/faultpact` was independently
-checked and found empty before publication. This candidate may be published as
-an unreleased main-branch snapshot after the final secret scan. No `v1.0.0` tag
-or GitHub release is permitted while this certification is partial.
+checked and found empty before publication. The unreleased candidate was pushed
+to `main` without force-push:
+
+- Commit: `f5b9e4e08075ac584bf4f7f319ec36e78aacd1ad`
+- Branch: `main`
+- Tag: **not created**
+- GitHub release: **not created**
+
+No `v1.0.0` tag or GitHub release is permitted while this certification is
+partial.
 
 ## Release Artifacts
 
