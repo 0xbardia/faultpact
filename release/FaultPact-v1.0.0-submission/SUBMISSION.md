@@ -122,3 +122,9 @@ receipt.
 - [Production deployment](PRODUCTION_DEPLOYMENT.md)
 - [System architecture](architecture/faultpact-system.mmd)
 - [Evidence pipeline](EVIDENCE_PIPELINE.md)
+
+Candidate archive (not a final release):
+`release/FaultPact-v1.0.0-candidate-submission.zip`
+
+Archive SHA-256:
+`c28d466998a7fb8da8507b86f7f095afd05d856a60b311cc5ad8161864a34787`

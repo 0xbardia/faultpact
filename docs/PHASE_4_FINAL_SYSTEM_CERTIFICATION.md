@@ -281,6 +281,9 @@ release/FaultPact-v1.0.0-submission/
 
 The submission directory is explicitly labelled unreleased. It contains no
 private key, environment file, wallet profile, database dump, or private log.
+An optional public candidate archive was created at
+`release/FaultPact-v1.0.0-candidate-submission.zip` with SHA-256
+`c28d466998a7fb8da8507b86f7f095afd05d856a60b311cc5ad8161864a34787`.
 
 ## Final Status
 
