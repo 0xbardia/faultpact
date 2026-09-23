@@ -8,6 +8,7 @@ flowchart TD
     DB[(PostgreSQL\nindexed/cache/monitoring layer)]
     API[Fastify API\nreads and operational status]
     PROBES[Regional probe workers\nRPC telemetry]
+    RPC[RPC Providers\nconfigured service endpoints]
     AGG[Deterministic metric windows]
     ART[Immutable evidence artifact\ncanonical bytes + SHA-256]
     EVID[Public immutable endpoint\n/evidence/<sha>.json]
@@ -22,6 +23,7 @@ flowchart TD
     DB --> API
     API --> W
 
+    RPC --> PROBES
     PROBES --> AGG
     AGG --> ART
     ART --> EVID

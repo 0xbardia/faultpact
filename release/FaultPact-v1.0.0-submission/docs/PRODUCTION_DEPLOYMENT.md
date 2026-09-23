@@ -64,14 +64,17 @@ corepack pnpm build
 ```
 
 Use `prisma migrate deploy`, never `db push`, for a production database. The
-current database has two checked-in migrations and no pending migration at
-certification time.
+original system certification recorded two migrations. The release candidate
+adds `0003_evidence_status_and_claim_lookup`, which makes external-source
+verification explicitly nullable and indexes Incident-filtered Claims. It was
+applied to production on 2026-09-23; the migration status check reports no
+pending migrations.
 
 ## Process topology
 
 ```text
 Nginx :443
-  ├── /       → Next.js web :3001
+  ├── /       → Next.js web :4320
   ├── /api/   → Fastify API :4310
   └── /evidence/ → Fastify immutable artifact route :4310
 

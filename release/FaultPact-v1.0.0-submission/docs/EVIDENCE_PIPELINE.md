@@ -21,8 +21,11 @@ content.
 with `Content-Type: application/json`, an SHA-based ETag, and immutable cache
 headers. The API never parses and reserializes the stored JSON.
 
-Artifacts are not automatically authoritative merely because a worker created
-them. Before any future onchain submission, the reporter wallet must be
+Onchain evidence can also point to an external URI. The index preserves that
+URI and the submitted hash but does not fetch the source, so the public Incident
+view labels fetch, hash, and schema checks as not checked by the app. Artifacts
+are not automatically authoritative merely because a worker created them.
+Before any future onchain submission, the reporter wallet must be
 configured, its address must be authorized by the frozen contract, and the
 artifact must pass the same schema, service, scope, time, metric-bound, and hash
 checks. Multiple regions use distinct reporter identities; one worker cannot

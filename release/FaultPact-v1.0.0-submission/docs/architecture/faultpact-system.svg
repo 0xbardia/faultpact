@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
   <title id="title">FaultPact system architecture</title>
-  <desc id="desc">Users interact with FaultPact Web and a wallet to reach the frozen GenLayer contract. The contract feeds the indexer and API. Regional probes produce immutable evidence artifacts for authorized reporters.</desc>
+  <desc id="desc">Users interact with FaultPact Web and a wallet to reach the frozen GenLayer contract. The contract feeds the indexer, PostgreSQL, and API. RPC providers feed regional probe workers, which aggregate immutable evidence for authorized reporters to submit to the contract.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#111111"/></marker>
     <style>
@@ -59,7 +59,10 @@
   <text class="label" x="679" y="534" text-anchor="middle">/evidence/&lt;sha&gt;</text>
   <text class="small" x="679" y="556" text-anchor="middle">immutable public bytes</text>
   <path class="arrow" d="M679 436 V500"/><path class="arrow" d="M544 538 H604"/>
-  <path class="arrow" d="M754 538 H935 V262"/>
-  <text class="small" x="770" y="522">authorized reporter submission</text>
+  <rect class="box" x="800" y="590" width="180" height="76" fill="#fff"/>
+  <text class="label" x="890" y="624" text-anchor="middle">Reporter</text>
+  <text class="small" x="890" y="646" text-anchor="middle">authorized signer</text>
+  <path class="arrow" d="M754 538 V628 H800"/>
+  <path class="arrow" d="M980 628 H1240 V280 H935 V262"/>
   <text class="small" x="64" y="690">DB supports discovery, history, and monitoring. It never overrides final contract state.</text>
 </svg>
