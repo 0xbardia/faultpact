@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import { sha256Bytes } from "@faultpact/shared";
 
-function fakeDb(artifact?: { sha256: string; contentType: string; bytes: Buffer }) {
+function fakeDb(artifact?: { sha256: string; contentType: string; bytes: Buffer }, lastSuccessAt = new Date()) {
   const providerRows: unknown[] = [];
   return {
     provider: { findMany: async () => providerRows, count: async () => providerRows.length, findFirst: async () => null },
@@ -14,7 +14,7 @@ function fakeDb(artifact?: { sha256: string; contentType: string; bytes: Buffer 
     challenge: { findMany: async () => [], count: async () => 0, findFirst: async () => null },
     claim: { findMany: async () => [], count: async () => 0, findFirst: async () => null },
     protocolSnapshot: { findUnique: async () => null },
-    syncCursor: { findUnique: async () => ({ status: "HEALTHY", lastSuccessAt: new Date() }), findMany: async () => [] },
+    syncCursor: { findUnique: async () => ({ status: "HEALTHY", lastSuccessAt }), findMany: async () => [] },
     workerHeartbeat: { findMany: async () => [] },
     evidenceArtifact: { count: async () => 0, findUnique: async () => artifact ?? null },
     monitorTarget: { create: async (args: unknown) => args },
@@ -37,10 +37,33 @@ describe("Fastify API boundary", () => {
     expect(response.json().data.checks.indexer).toBe("ok");
     await app.close();
   });
+  it("API_READY_DETECTS_STALE_INDEX", async () => {
+    const stale = new Date(Date.now() - 120_000);
+    const app = await buildApp({ db: fakeDb(undefined, stale), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().data.checks.indexer).toBe("degraded");
+    await app.close();
+  });
   it("API_PAGINATION_BOUNDED", async () => {
     const app = await buildApp({ db: fakeDb(), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
     const response = await app.inject({ method: "GET", url: "/api/v1/providers?limit=101" });
     expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+  it("API_INCIDENT_FILTER_REQUIRES_DECIMAL_ID", async () => {
+    const app = await buildApp({ db: fakeDb(), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const response = await app.inject({ method: "GET", url: "/api/v1/claims?incidentId=not-an-id" });
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+  it("API_DATABASE_ERRORS_ARE_NOT_EXPOSED_AS_CLIENT_ERRORS", async () => {
+    const db = fakeDb() as unknown as { provider: { findMany: () => Promise<unknown[]> } };
+    db.provider.findMany = async () => { throw new Error("postgres host and credentials"); };
+    const app = await buildApp({ db: db as never, deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const response = await app.inject({ method: "GET", url: "/api/v1/providers" });
+    expect(response.statusCode).toBe(503);
+    expect(response.body).not.toContain("postgres host and credentials");
     await app.close();
   });
   it("INTERNAL_API_REQUIRES_AUTH", async () => {

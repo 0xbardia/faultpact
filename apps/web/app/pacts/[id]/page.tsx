@@ -1,4 +1,5 @@
-import Link from "next/link";
+import { pageMetadata } from "../../../lib/metadata";
 import { Shell } from "../../../components/shell";
 import { PactDetail } from "../../../components/explorer";
-export default async function PactDetailPage({ params }: { params: Promise<{ id: string }> }) { const id = (await params).id; return <Shell><PactDetail id={id} /><div className="floating-action"><Link className="button button-coral" href={`/app/purchase?pact=${id}`}>Review Coverage for this Pact ↗</Link></div></Shell>; }
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) { const { id } = await params; return pageMetadata(`Pact #${id}`, `Review Pact #${id}, including Provider backing, SLA thresholds, Coverage bounds, and claim deadlines.`, `/pacts/${id}`); }
+export default async function PactDetailPage({ params }: { params: Promise<{ id: string }> }) { return <Shell><PactDetail id={(await params).id} /></Shell>; }

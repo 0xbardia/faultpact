@@ -55,7 +55,7 @@ PostgreSQL version before rollout.
 The current host deployment uses systemd units `faultpact-api`,
 `faultpact-worker`, and `faultpact-web` behind Nginx for
 `faultpact.bydx.fun`. The API listens on loopback port `4310`; the web service
-listens on loopback port `3001`. PostgreSQL is local to the host and is not
+listens on loopback port `4320`. PostgreSQL is local to the host and is not
 publicly exposed.
 
 The public checks used for the Phase 4 candidate were:

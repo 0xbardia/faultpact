@@ -10,7 +10,7 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b && pnpm --filter @faultpact/web typecheck",
     "test": "vitest run",
-    "test:e2e": "pnpm --filter @faultpact/web e2e",
+    "test:e2e": "pnpm build && pnpm --filter @faultpact/web e2e",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "build": "tsc -b && pnpm --filter @faultpact/web build",
     "db:generate": "prisma generate",

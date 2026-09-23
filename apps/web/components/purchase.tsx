@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ActionReview } from "./actions";
-import { asRecord, asRows } from "../lib/api";
 import { useEffect, useState } from "react";
+import { ActionReview } from "./actions";
+import { asRecord, asRows, text } from "../lib/api";
 import { useApi } from "../lib/use-api";
-import { formatGen, rowValue } from "../lib/format";
+import { formatBpsAsPercentage, formatDurationSeconds, formatGen, genDecimal, parseGen, rowValue } from "../lib/format";
 import { ErrorState, Freshness, KeyValue, LoadingState, PageHeader, Panel } from "./ui";
 
 export function PurchaseFlow({ selected }: { selected: string }) {
@@ -14,33 +14,83 @@ export function PurchaseFlow({ selected }: { selected: string }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const list = useApi<Record<string, unknown>[]>("/pacts", { limit: 25 });
   const pacts = asRows(list.data?.data);
-  const pact = asRecord(pacts.find((row) => rowValue(row, "onchainId") === selected) ?? pacts[0]);
-  const id = rowValue(pact, "onchainId", "0");
-  const detail = useApi<Record<string, unknown>>(id !== "0" ? `/pacts/${id}` : "/stats", undefined, refreshKey);
-  const selectedPact = asRecord(detail.data?.data);
-  const terms = asRecord(selectedPact.terms);
-  const rawTerms = asRecord(asRecord(selectedPact.raw).terms);
-  const scope = rowValue(selectedPact, "regionScope", rowValue(terms, "regionScope", rowValue(rawTerms, "region_scope", "global")));
-  const minAmount = rowValue(terms, "minCoverageAmount", rowValue(rawTerms, "min_coverage_amount", "1"));
-  const maxAmount = rowValue(terms, "maxCoverageAmount", rowValue(rawTerms, "max_coverage_amount", "0"));
-  const minDuration = rowValue(terms, "minCoverageDurationSeconds", rowValue(rawTerms, "min_coverage_duration_seconds", "60"));
-  const maxDuration = rowValue(terms, "maxCoverageDurationSeconds", rowValue(rawTerms, "max_coverage_duration_seconds", "0"));
-  const premiumBps = rowValue(terms, "premiumBpsPerYear", rowValue(rawTerms, "premium_bps_per_year", "0"));
-  const rawPact = asRecord(selectedPact.raw);
-  const remainingCapacity = rowValue(asRecord(selectedPact.capacity), "remaining", rowValue(asRecord(rawPact.capacity), "remaining", "0"));
-  useEffect(() => { if (id !== "0") { setCoverageLimit(minAmount); setDurationSeconds(minDuration); } }, [id, minAmount, minDuration]);
-  const limit = /^\d+$/.test(coverageLimit) ? BigInt(coverageLimit) : 0n;
+  const id = selected || rowValue(pacts[0], "onchainId", "0");
+  const detail = useApi<Record<string, unknown>>(`/pacts/${id}`, undefined, refreshKey);
+  const pact = asRecord(detail.data?.data);
+  const terms = asRecord(pact.terms);
+  const rawTerms = asRecord(terms.raw);
+  const minAmount = rowValue(terms, "minCoverageAmount", "1");
+  const maxAmount = rowValue(terms, "maxCoverageAmount", "0");
+  const minDuration = rowValue(terms, "minCoverageDurationSeconds", "60");
+  const maxDuration = rowValue(terms, "maxCoverageDurationSeconds", "0");
+  const premiumBps = rowValue(terms, "premiumBpsPerYear", "0");
+  const remaining = rowValue(asRecord(pact.capacity), "remaining", "0");
+  const scope = rowValue(pact, "regionScope", rowValue(rawTerms, "region_scope", "Scope unavailable"));
+
+  useEffect(() => {
+    if (id !== "0") {
+      setCoverageLimit(genDecimal(minAmount));
+      setDurationSeconds(minDuration);
+    }
+  }, [id, minAmount, minDuration]);
+
+  const limit = parseGen(coverageLimit);
   const duration = /^\d+$/.test(durationSeconds) ? BigInt(durationSeconds) : 0n;
   const bps = /^\d+$/.test(premiumBps) ? BigInt(premiumBps) : 0n;
-  const denominator = 10000n * 365n * 24n * 60n * 60n;
-  const calculatedPremium = limit > 0n && duration > 0n && bps > 0n ? ((limit * bps * duration) + denominator - 1n) / denominator : 0n;
-  const premium = calculatedPremium < 1n && bps > 0n ? 1n : calculatedPremium;
-  const validPurchase = limit > 0n && duration > 0n && limit >= BigInt(minAmount) && limit <= BigInt(maxAmount) && limit <= BigInt(remainingCapacity) && duration >= BigInt(minDuration) && duration <= BigInt(maxDuration);
+  const minLimit = /^\d+$/.test(minAmount) ? BigInt(minAmount) : 0n;
+  const maxLimit = /^\d+$/.test(maxAmount) ? BigInt(maxAmount) : 0n;
+  const capacity = /^\d+$/.test(remaining) ? BigInt(remaining) : 0n;
+  const minDurationValue = /^\d+$/.test(minDuration) ? BigInt(minDuration) : 0n;
+  const maxDurationValue = /^\d+$/.test(maxDuration) ? BigInt(maxDuration) : 0n;
+  const yearSeconds = 365n * 24n * 60n * 60n;
+  const premium = limit && duration && bps
+    ? ((limit * bps * duration) + 10_000n * yearSeconds - 1n) / (10_000n * yearSeconds) || 1n
+    : 0n;
+  const validPurchase = limit !== null && limit > 0n && duration > 0n && minLimit > 0n && maxLimit > 0n && minDurationValue > 0n && maxDurationValue > 0n
+    && limit >= minLimit && limit <= maxLimit && limit <= capacity && duration >= minDurationValue && duration <= maxDurationValue;
+
   if (list.loading) return <LoadingState />;
   if (list.error) return <ErrorState message={list.error} />;
   if (!pacts.length) return <main className="content-shell"><PageHeader eyebrow="Customer workflow" title="No Coverage to review." description="There are no indexed Pacts available for purchase yet." actions={<Link className="button button-quiet" href="/pacts">← Browse Pacts</Link>} /></main>;
   if (detail.loading || detail.error) return <main className="content-shell">{detail.loading ? <LoadingState label="Loading Pact terms" /> : <ErrorState message={detail.error ?? "Pact terms unavailable"} />}</main>;
-  return <main className="content-shell"><PageHeader eyebrow="Customer workflow" title="Review Coverage." description="The contract determines capacity, premium, deadlines, and final settlement. This screen exposes the terms before a wallet action." actions={<Link className="button button-quiet" href="/pacts">← Browse Pacts</Link>} /><div className="purchase-grid"><Panel title={`Pact #${rowValue(selectedPact, "onchainId", id)}`} kicker="Selected protection"><div className="kv-grid compact"><KeyValue label="Scope" value={scope} /><KeyValue label="P95 ceiling" value={`${rowValue(terms, "p95LatencyMs", rowValue(rawTerms, "p95_latency_ms"))} ms`} /><KeyValue label="Claim window" value={`${rowValue(terms, "claimWindowSeconds", rowValue(rawTerms, "claim_window_seconds"))} seconds`} /><KeyValue label="Max Coverage" value={formatGen(terms.maxCoverageAmount ?? rawTerms.max_coverage_amount)} /></div><Freshness indexedAt={selectedPact.indexedAt} /></Panel><Panel title="Coverage terms" kicker="Exact integer inputs"><div className="form-preview"><label>Coverage limit<input inputMode="numeric" value={coverageLimit} onChange={(event) => setCoverageLimit(event.target.value.replace(/[^0-9]/g, ""))} /></label><label>Duration (seconds)<input inputMode="numeric" value={durationSeconds} onChange={(event) => setDurationSeconds(event.target.value.replace(/[^0-9]/g, ""))} /></label></div><div className="kv-grid compact"><KeyValue label="Estimated premium" value={formatGen(premium)} /><KeyValue label="Capacity remaining" value={formatGen(remainingCapacity)} /><KeyValue label="Payment value" value={`${premium.toString()} wei`} /></div>{!validPurchase ? <p className="review-warning" role="status">Capacity or term data is incomplete; signing stays disabled until the indexed Pact state is available.</p> : <p className="muted">The wallet will show the native GEN payment and the exact frozen contract arguments before signing.</p>}</Panel><ActionReview method="buy_coverage" title="Coverage purchase review" description="This call is sent through the browser wallet to the frozen GenLayer deployment. A final state is shown only after the network reports it." args={[["pact_id", id], ["coverage_limit", coverageLimit || "—"], ["duration_seconds", durationSeconds || "—"], ["max_premium", premium.toString()], ["payment", `${premium.toString()} wei`]]} transaction={validPurchase ? { args: [BigInt(id), limit, duration, premium], value: premium } : undefined} onFinalized={() => setRefreshKey((value) => value + 1)} /></div></main>;
+
+  return <main className="content-shell">
+    <PageHeader eyebrow="Customer workflow" title="Review Coverage." description="Check the Provider, service, SLA and current capital before a wallet action. The contract confirms final capacity and price." actions={<Link className="button button-quiet" href="/pacts">← Browse Pacts</Link>} />
+    <div className="purchase-grid">
+      <Panel title={`Pact #${rowValue(pact, "onchainId", id)}`} kicker="Selected protection">
+        <div className="kv-grid compact">
+          <KeyValue label="Provider" value={text(asRecord(pact.provider).name, `Provider #${rowValue(pact, "providerId")}`)} />
+          <KeyValue label="Service" value={text(asRecord(pact.service).name, `Service #${rowValue(asRecord(pact.service), "onchainId", rowValue(pact, "serviceId"))}`)} />
+          <KeyValue label="Scope" value={scope} />
+          <KeyValue label="P95 ceiling" value={`${rowValue(terms, "p95LatencyMs")} ms`} />
+          <KeyValue label="Claim window" value={formatDurationSeconds(terms.claimWindowSeconds)} />
+          <KeyValue label="Maximum Coverage" value={formatGen(terms.maxCoverageAmount)} />
+        </div>
+        <Freshness indexedAt={pact.indexedAt} />
+      </Panel>
+      <Panel title="Coverage terms" kicker="Before you sign">
+        <div className="form-preview">
+          <label>Coverage limit (GEN)
+            <input inputMode="decimal" value={coverageLimit} onChange={(event) => setCoverageLimit(event.target.value.replace(/[^0-9.]/g, ""))} />
+            <small>Allowed: {genDecimal(minAmount)} to {genDecimal(maxAmount)} GEN</small>
+          </label>
+          <label>Duration (seconds)
+            <input inputMode="numeric" value={durationSeconds} onChange={(event) => setDurationSeconds(event.target.value.replace(/[^0-9]/g, ""))} />
+            <small>Allowed: {formatDurationSeconds(minDuration)} to {formatDurationSeconds(maxDuration)}</small>
+          </label>
+        </div>
+        <div className="kv-grid compact">
+          <KeyValue label="Estimated premium" value={formatGen(premium)} />
+          <KeyValue label="Premium rate" value={`${formatBpsAsPercentage(premiumBps)} per year`} />
+          <KeyValue label="Capacity remaining" value={formatGen(remaining)} />
+        </div>
+        {!validPurchase
+          ? <p className="review-warning" role="status">Enter a Coverage limit and duration within the Pact terms and available capital.</p>
+          : <p className="muted">This estimate rounds up to the smallest GEN unit. The wallet shows the exact payment; the contract checks capacity again when the transaction executes.</p>}
+      </Panel>
+      <ActionReview method="buy_coverage" title="Coverage purchase review" description="The wallet submits this purchase to the frozen GenLayer deployment. The contract checks the amount and capacity again before creating Coverage." args={[["pact_id", id], ["coverage_limit", `${coverageLimit || "—"} GEN`], ["duration_seconds", durationSeconds || "—"], ["max_premium", formatGen(premium)], ["payment", formatGen(premium)]]} transaction={validPurchase ? { args: [BigInt(id), limit ?? 0n, duration, premium], value: premium } : undefined} disabledReason="Enter a Coverage limit and duration within the Pact terms and available capital." onFinalized={() => setRefreshKey((value) => value + 1)} />
+    </div>
+  </main>;
 }
 
 export function ClaimReview({ id }: { id: string }) {
@@ -48,5 +98,13 @@ export function ClaimReview({ id }: { id: string }) {
   const claim = asRecord(state.data?.data);
   if (state.loading) return <LoadingState />;
   if (state.error) return <ErrorState message={state.error} />;
-  return <main className="content-shell"><PageHeader eyebrow="Customer workflow / claim" title={`Claim #${rowValue(claim, "onchainId", id)}`} description="File while the Coverage deadline is open. The final claim result comes from the contract, not this preview." actions={<Link className="button button-quiet" href="/claims">← Claims</Link>} /><div className="purchase-grid"><Panel title="Current indexed claim" kicker="Not a receipt"><div className="kv-grid compact"><KeyValue label="Coverage" value={`#${rowValue(claim, "coverageId")}`} /><KeyValue label="Incident" value={`#${rowValue(claim, "incidentId")}`} /><KeyValue label="Status" value={rowValue(claim, "status")} /><KeyValue label="Stored payout" value={formatGen(claim.payout)} /></div></Panel><ActionReview method="file_claim" title="Claim filing review" description="A claim binds one Coverage to one Incident. Review the deadline and current Incident state before signing." args={[["coverage_id", rowValue(claim, "coverageId")], ["incident_id", rowValue(claim, "incidentId")]]} /></div></main>;
+  return <main className="content-shell">
+    <PageHeader eyebrow="Customer workspace / claim record" title={`Claim #${rowValue(claim, "onchainId", id)}`} description="This is an indexed claim receipt. Its status and payout come from the contract; follow the linked records to review Coverage terms and Incident facts." actions={<Link className="button button-quiet" href="/claims">← Claims</Link>} />
+    <div className="purchase-grid"><Panel title="Claim result" kicker="Contract-backed state"><div className="kv-grid compact">
+      <KeyValue label="Coverage" value={<Link href={`/coverages/${rowValue(claim, "coverageId")}`}>#{rowValue(claim, "coverageId")}</Link>} />
+      <KeyValue label="Incident" value={<Link href={`/incidents/${rowValue(claim, "incidentId")}`}>#{rowValue(claim, "incidentId")}</Link>} />
+      <KeyValue label="Status" value={rowValue(claim, "status")} />
+      <KeyValue label="Payout" value={formatGen(claim.payout)} />
+    </div><Freshness indexedAt={claim.indexedAt} /></Panel></div>
+  </main>;
 }

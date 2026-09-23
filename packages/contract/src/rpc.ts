@@ -173,30 +173,54 @@ function b64ToText(value: unknown): string {
 export class StudioRpcTransport implements RpcTransport {
   private nextRequestId = 1;
   private lastRequestAt = 0;
+  private blockedUntil = 0;
+  private rateLimitCount = 0;
+  private requestQueue: Promise<void> = Promise.resolve();
+  private readonly inFlight = new Map<string, Promise<unknown>>();
   constructor(readonly rpcUrl: string) {}
 
   async request(method: string, params: readonly unknown[] = []): Promise<unknown> {
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      const elapsed = Date.now() - this.lastRequestAt;
-      if (elapsed < 250) await new Promise((resolve) => setTimeout(resolve, 250 - elapsed));
-      const id = this.nextRequestId++;
-      this.lastRequestAt = Date.now();
-      const response = await fetch(this.rpcUrl, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }), signal: AbortSignal.timeout(10_000) });
-      if (response.status === 429 && attempt < 3) {
-        const retryAfter = Number(response.headers.get("retry-after") ?? "");
-        if (Number.isFinite(retryAfter) && retryAfter > 30) throw new Error(`GenLayer RPC rate limit exceeded; retry after ${retryAfter} seconds`);
-        const exponentialDelay = Math.min(10_000, 500 * 2 ** attempt);
-        const serverDelay = Number.isFinite(retryAfter) ? Math.max(250, retryAfter * 1000) : 0;
-        const jitter = Math.floor(Math.random() * 250);
-        await new Promise((resolve) => setTimeout(resolve, Math.min(10_000, Math.max(exponentialDelay, serverDelay) + jitter)));
-        continue;
-      }
-      if (!response.ok) throw new Error(`GenLayer RPC HTTP ${response.status}`);
-      const payload = await response.json() as { result?: unknown; error?: { message?: string } };
-      if (payload.error) throw new Error(`GenLayer RPC error (${method}): ${payload.error.message ?? "request failed"}`);
-      return payload.result;
+    const key = `${method}:${JSON.stringify(params)}`;
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+    const pending = this.queuedRequest(method, params);
+    this.inFlight.set(key, pending);
+    try { return await pending; }
+    finally { if (this.inFlight.get(key) === pending) this.inFlight.delete(key); }
+  }
+
+  private queuedRequest(method: string, params: readonly unknown[]): Promise<unknown> {
+    const pending = this.requestQueue.then(() => this.performRequest(method, params));
+    this.requestQueue = pending.then(() => undefined, () => undefined);
+    return pending;
+  }
+
+  private async performRequest(method: string, params: readonly unknown[]): Promise<unknown> {
+    const now = Date.now();
+    if (now < this.blockedUntil) throw new Error(`GenLayer RPC HTTP 429 cooldown; retry after ${Math.ceil((this.blockedUntil - now) / 1000)} seconds`);
+    const elapsed = now - this.lastRequestAt;
+    if (elapsed < 250) await new Promise((resolve) => setTimeout(resolve, 250 - elapsed));
+    const id = this.nextRequestId++;
+    this.lastRequestAt = Date.now();
+    const response = await fetch(this.rpcUrl, { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }), signal: AbortSignal.timeout(10_000) });
+    if (response.status === 429) {
+      const header = response.headers.get("retry-after");
+      const retryAfterSeconds = Number(header);
+      const retryAfterDate = header && !Number.isFinite(retryAfterSeconds) ? Date.parse(header) : Number.NaN;
+      const serverDelay = Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+        ? retryAfterSeconds * 1000
+        : Number.isFinite(retryAfterDate) ? Math.max(0, retryAfterDate - Date.now()) : 0;
+      const backoff = Math.min(60_000, 500 * 2 ** Math.min(this.rateLimitCount, 7));
+      const delay = Math.min(86_400_000, Math.max(backoff, serverDelay) + Math.floor(Math.random() * 250));
+      this.blockedUntil = Math.max(this.blockedUntil, Date.now() + delay);
+      this.rateLimitCount += 1;
+      throw new Error(`GenLayer RPC HTTP 429 rate limited; retry after ${Math.ceil(delay / 1000)} seconds`);
     }
-    throw new Error(`GenLayer RPC rate limit persisted for ${method}`);
+    if (!response.ok) throw new Error(`GenLayer RPC HTTP ${response.status}`);
+    const payload = await response.json() as { result?: unknown; error?: { message?: string } };
+    if (payload.error) throw new Error(`GenLayer RPC error (${method}): ${payload.error.message ?? "request failed"}`);
+    this.rateLimitCount = 0;
+    return payload.result;
   }
 
   async readContract(address: string, method: string, args: readonly unknown[], from = "0x0000000000000000000000000000000000000000"): Promise<unknown> {

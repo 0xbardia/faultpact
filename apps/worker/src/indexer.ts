@@ -34,6 +34,10 @@ function stringOf(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function isRpcRateLimit(message: string): boolean {
+  return /\b429\b|cooldown|rate limit/i.test(message);
+}
+
 function addressOf(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   try { return normalizeAddress(value); } catch { return undefined; }
@@ -91,7 +95,7 @@ export class FaultPactIndexer {
       this.lastRpcAt = Date.now();
       try { return await operation(); } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("429") || attempt === 3) throw error;
+        if (!message.includes("429") || message.includes("cooldown") || attempt === 3) throw error;
         await sleep((attempt + 1) * 500);
       }
     }
@@ -118,45 +122,69 @@ export class FaultPactIndexer {
 
   async syncOnce(): Promise<{ deploymentId: number; counters: Record<string, unknown>; indexed: Record<string, number> }> {
     const deploymentId = await this.ensureDeployment();
-    const counters = recordOf(await this.rpcCall(() => this.contract.getCounters()));
-    const config = await this.rpcCall(() => this.contract.getProtocolConfig());
-    await this.db.protocolSnapshot.upsert({
-      where: { deploymentId },
-      create: { deploymentId, raw: jsonInput(config) },
-      update: { raw: jsonInput(config), capturedAt: new Date() },
-    });
-    await this.db.contractSnapshot.create({ data: { deploymentId, chainId: this.contract.chainId, config: jsonInput(config), counters: jsonInput(counters) } });
-    const indexed: Record<string, number> = {};
-    for (const kind of entityKinds) indexed[kind] = await this.syncKind(deploymentId, kind, counterLimit(counters, kind));
-    await this.db.syncCursor.upsert({
-      where: { deploymentId_entityKind: { deploymentId, entityKind: "all" } },
-      create: { deploymentId, entityKind: "all", nextId: decimal(0), lastSuccessAt: new Date(), status: "HEALTHY" },
-      update: { lastSuccessAt: new Date(), lastError: null, status: "HEALTHY" },
-    });
-    return { deploymentId, counters, indexed };
+    try {
+      const counters = recordOf(await this.rpcCall(() => this.contract.getCounters()));
+      const config = await this.rpcCall(() => this.contract.getProtocolConfig());
+      await this.db.protocolSnapshot.upsert({
+        where: { deploymentId },
+        create: { deploymentId, raw: jsonInput(config) },
+        update: { raw: jsonInput(config), capturedAt: new Date() },
+      });
+      await this.db.contractSnapshot.create({ data: { deploymentId, chainId: this.contract.chainId, config: jsonInput(config), counters: jsonInput(counters) } });
+      const indexed: Record<string, number> = {};
+      const failures: string[] = [];
+      for (const kind of entityKinds) {
+        const result = await this.syncKind(deploymentId, kind, counterLimit(counters, kind));
+        indexed[kind] = result.count;
+        if (result.error) {
+          failures.push(`${kind}: ${result.error}`);
+          if (isRpcRateLimit(result.error)) break;
+        }
+      }
+      const now = new Date();
+      const lastError = failures.length ? failures.join("; ").slice(0, 2000) : null;
+      await this.db.syncCursor.upsert({
+        where: { deploymentId_entityKind: { deploymentId, entityKind: "all" } },
+        create: { deploymentId, entityKind: "all", nextId: decimal(0), lastSuccessAt: lastError ? null : now, lastError, status: lastError ? "DEGRADED" : "HEALTHY" },
+        update: { ...(lastError ? {} : { lastSuccessAt: now }), lastError, status: lastError ? "DEGRADED" : "HEALTHY" },
+      });
+      return { deploymentId, counters, indexed };
+    } catch (error) {
+      const lastError = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+      await this.db.syncCursor.upsert({
+        where: { deploymentId_entityKind: { deploymentId, entityKind: "all" } },
+        create: { deploymentId, entityKind: "all", nextId: decimal(0), lastSuccessAt: null, lastError, status: "DEGRADED" },
+        update: { lastError, status: "DEGRADED" },
+      });
+      throw error;
+    }
   }
 
-  private async syncKind(deploymentId: number, kind: EntityKind, limit: bigint): Promise<number> {
+  private async syncKind(deploymentId: number, kind: EntityKind, limit: bigint): Promise<{ count: number; error: string | null }> {
     const maxEntityId = this.options.maxEntityId ?? 100_000n;
     const bounded = limit > maxEntityId ? maxEntityId : limit;
-    if (bounded < 1n) return 0;
+    if (bounded < 1n) return { count: 0, error: null };
     let count = 0;
     let lastError: string | null = null;
+    let nextId = 1n;
     for (let id = 1n; id <= bounded; id += 1n) {
       try {
         const value = await this.rpcCall(() => this.contract.getEntity(kind, id));
         if (await this.upsert(kind, deploymentId, id, value)) count += 1;
+        nextId = id + 1n;
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
         this.log?.warn({ kind, id: id.toString(), err: lastError }, "entity fetch failed; retaining existing row");
+        if (isRpcRateLimit(lastError)) { nextId = id; break; }
+        nextId = id + 1n;
       }
     }
     await this.db.syncCursor.upsert({
       where: { deploymentId_entityKind: { deploymentId, entityKind: kind } },
-      create: { deploymentId, entityKind: kind, nextId: decimal(bounded + 1n), lastSuccessAt: lastError ? null : new Date(), lastError, status: lastError ? "DEGRADED" : "HEALTHY" },
-      update: { nextId: decimal(bounded + 1n), ...(lastError ? {} : { lastSuccessAt: new Date() }), lastError, status: lastError ? "DEGRADED" : "HEALTHY" },
+      create: { deploymentId, entityKind: kind, nextId: decimal(nextId), lastSuccessAt: lastError ? null : new Date(), lastError, status: lastError ? "DEGRADED" : "HEALTHY" },
+      update: { nextId: decimal(nextId), ...(lastError ? {} : { lastSuccessAt: new Date() }), lastError, status: lastError ? "DEGRADED" : "HEALTHY" },
     });
-    return count;
+    return { count, error: lastError };
   }
 
   private async upsert(kind: EntityKind, deploymentId: number, onchainId: bigint, value: unknown): Promise<boolean> {
@@ -191,7 +219,8 @@ export class FaultPactIndexer {
         if (!service) return false;
         const providerOnchainId = idOf(field(raw, "provider_id", "providerId"));
         const provider = providerOnchainId === undefined ? null : await this.db.provider.findUnique({ where: { deploymentId_onchainId: { deploymentId, onchainId: decimal(providerOnchainId) } }, select: { id: true } });
-        const pact = await this.db.pact.upsert({ where: { deploymentId_onchainId: { deploymentId, onchainId: decimal(onchainId) } }, create: { ...common, serviceId: service.id, providerId: provider?.id, revision: decimal(idOf(field(raw, "revision")) ?? 0n), status: stringOf(field(raw, "status")), regionScope: stringOf(field(raw, "region_scope", "regionScope")) }, update: { serviceId: service.id, providerId: provider?.id, revision: decimal(idOf(field(raw, "revision")) ?? 0n), status: stringOf(field(raw, "status")), regionScope: stringOf(field(raw, "region_scope", "regionScope")), raw: jsonInput(raw), indexedAt: new Date() } });
+        const regionScope = stringOf(field(raw, "region_scope", "regionScope")) ?? stringOf(field(recordOf(field(raw, "terms")), "region_scope", "regionScope"));
+        const pact = await this.db.pact.upsert({ where: { deploymentId_onchainId: { deploymentId, onchainId: decimal(onchainId) } }, create: { ...common, serviceId: service.id, providerId: provider?.id, revision: decimal(idOf(field(raw, "revision")) ?? 0n), status: stringOf(field(raw, "status")), regionScope }, update: { serviceId: service.id, providerId: provider?.id, revision: decimal(idOf(field(raw, "revision")) ?? 0n), status: stringOf(field(raw, "status")), regionScope, raw: jsonInput(raw), indexedAt: new Date() } });
         const terms = recordOf(await this.rpcCall(() => this.contract.read("get_pact_terms", [onchainId])));
         const capacity = recordOf(await this.rpcCall(() => this.contract.read("get_pact_capacity", [onchainId])));
         const termData = { availabilityThresholdPpm: decimalOrNull(field(terms, "availability_threshold_ppm", "availabilityThresholdPpm")), p95LatencyMs: decimalOrNull(field(terms, "p95_latency_ms", "p95LatencyMs")), errorRateThresholdPpm: decimalOrNull(field(terms, "error_rate_threshold_ppm", "errorRateThresholdPpm")), blockLagThreshold: decimalOrNull(field(terms, "block_lag_threshold", "blockLagThreshold")), minIncidentDurationSeconds: decimalOrNull(field(terms, "min_incident_duration_seconds", "minIncidentDurationSeconds")), claimWindowSeconds: decimalOrNull(field(terms, "claim_window_seconds", "claimWindowSeconds")), minCoverageDurationSeconds: decimalOrNull(field(terms, "min_coverage_duration_seconds", "minCoverageDurationSeconds")), maxCoverageDurationSeconds: decimalOrNull(field(terms, "max_coverage_duration_seconds", "maxCoverageDurationSeconds")), minCoverageAmount: decimalOrNull(field(terms, "min_coverage_amount", "minCoverageAmount")), maxCoverageAmount: decimalOrNull(field(terms, "max_coverage_amount", "maxCoverageAmount")), premiumBpsPerYear: decimalOrNull(field(terms, "premium_bps_per_year", "premiumBpsPerYear")), deductibleBps: decimalOrNull(field(terms, "deductible_bps", "deductibleBps")), maxPayoutBps: decimalOrNull(field(terms, "max_payout_bps", "maxPayoutBps")), termsUri: stringOf(field(terms, "terms_uri", "termsUri")), termsHash: stringOf(field(terms, "terms_hash", "termsHash")), raw: jsonInput(terms) };
@@ -231,7 +260,7 @@ export class FaultPactIndexer {
         if (incidentOnchainId === undefined) return false;
         const incident = await this.db.incident.findUnique({ where: { deploymentId_onchainId: { deploymentId, onchainId: decimal(incidentOnchainId) } }, select: { id: true } });
         if (!incident) return false;
-        await this.db.evidence.upsert({ where: { deploymentId_onchainId: { deploymentId, onchainId: decimal(onchainId) } }, create: { ...common, incidentId: incident.id, evidenceType: stringOf(field(raw, "evidence_type", "evidenceType")), evidenceUri: stringOf(field(raw, "uri", "evidence_uri")), contentHash: stringOf(field(raw, "content_hash", "contentHash")), description: stringOf(field(raw, "description")), reporter: addressOf(field(raw, "submitter", "reporter")), authoritative: field(raw, "provenance") === "AUTHORITATIVE", reporterAuthorized: field(raw, "reporter_authorized_at_submission") === true, fetchStatus: field(raw, "usable") === false ? "FAILED" : "FETCHED", hashStatus: field(raw, "usable") === false ? "FAILED" : "VALID", schemaStatus: field(raw, "provenance") === "AUTHORITATIVE" ? "VALID" : "NOT_REQUIRED", usable: field(raw, "usable") !== false, artifactSha256: stringOf(field(raw, "content_hash", "contentHash")) }, update: { incidentId: incident.id, evidenceType: stringOf(field(raw, "evidence_type", "evidenceType")), evidenceUri: stringOf(field(raw, "uri", "evidence_uri")), contentHash: stringOf(field(raw, "content_hash", "contentHash")), description: stringOf(field(raw, "description")), reporter: addressOf(field(raw, "submitter", "reporter")), authoritative: field(raw, "provenance") === "AUTHORITATIVE", reporterAuthorized: field(raw, "reporter_authorized_at_submission") === true, usable: field(raw, "usable") !== false, raw: jsonInput(raw), indexedAt: new Date() } });
+        await this.db.evidence.upsert({ where: { deploymentId_onchainId: { deploymentId, onchainId: decimal(onchainId) } }, create: { ...common, incidentId: incident.id, evidenceType: stringOf(field(raw, "evidence_type", "evidenceType")), evidenceUri: stringOf(field(raw, "uri", "evidence_uri")), contentHash: stringOf(field(raw, "content_hash", "contentHash")), description: stringOf(field(raw, "description")), reporter: addressOf(field(raw, "submitter", "reporter")), authoritative: field(raw, "provenance") === "AUTHORITATIVE", reporterAuthorized: field(raw, "reporter_authorized_at_submission") === true, fetchStatus: "NOT_CHECKED", hashStatus: "NOT_CHECKED", schemaStatus: "NOT_CHECKED", usable: null, artifactSha256: null }, update: { incidentId: incident.id, evidenceType: stringOf(field(raw, "evidence_type", "evidenceType")), evidenceUri: stringOf(field(raw, "uri", "evidence_uri")), contentHash: stringOf(field(raw, "content_hash", "contentHash")), description: stringOf(field(raw, "description")), reporter: addressOf(field(raw, "submitter", "reporter")), authoritative: field(raw, "provenance") === "AUTHORITATIVE", reporterAuthorized: field(raw, "reporter_authorized_at_submission") === true, fetchStatus: "NOT_CHECKED", hashStatus: "NOT_CHECKED", schemaStatus: "NOT_CHECKED", usable: null, artifactSha256: null, raw: jsonInput(raw), indexedAt: new Date() } });
         return true;
       }
       case "claim": {
@@ -260,7 +289,9 @@ export class FaultPactIndexer {
           await this.db.claim.update({ where: { id: claim.id }, data: { status: chainStatus, raw: jsonInput(chain), indexedAt: new Date() } });
         }
       } catch (error) {
-        this.log?.warn({ claimId: claim.onchainId.toString(), err: error instanceof Error ? error.message : String(error) }, "claim reconciliation read failed");
+        const message = error instanceof Error ? error.message : String(error);
+        this.log?.warn({ claimId: claim.onchainId.toString(), err: message }, "claim reconciliation read failed");
+        if (isRpcRateLimit(message)) break;
       }
     }
     return anomalies;

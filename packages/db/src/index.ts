@@ -87,9 +87,10 @@ export async function listIndexed(db: PrismaClient, table: EntityTable, input: {
   providerId?: string;
   buyer?: string;
   claimant?: string;
+  incidentId?: string;
   faultDomain?: string;
 }): Promise<{ rows: unknown[]; total: number }> {
-  const { deploymentId, skip, take, search, status, serviceId, providerId, buyer, claimant, faultDomain } = input;
+  const { deploymentId, skip, take, search, status, serviceId, providerId, buyer, claimant, incidentId, faultDomain } = input;
   switch (table) {
     case "providers": {
       const where: Prisma.ProviderWhereInput = {
@@ -121,7 +122,7 @@ export async function listIndexed(db: PrismaClient, table: EntityTable, input: {
       return { rows, total };
     }
     case "claims": {
-      const where: Prisma.ClaimWhereInput = { deploymentId, ...(status ? { status } : {}), ...(claimant ? { claimant: normalizeAddress(claimant) } : {}) };
+      const where: Prisma.ClaimWhereInput = { deploymentId, ...(status ? { status } : {}), ...(claimant ? { claimant: normalizeAddress(claimant) } : {}), ...(incidentId ? { incident: { onchainId: decimal(incidentId) } } : {}) };
       const [rows, total] = await Promise.all([db.claim.findMany({ where, skip, take, orderBy: { id: "asc" } }), db.claim.count({ where })]);
       return { rows, total };
     }

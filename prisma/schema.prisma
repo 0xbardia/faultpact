@@ -241,7 +241,7 @@ model Evidence {
   fetchStatus    String?
   hashStatus     String?
   schemaStatus   String?
-  usable         Boolean    @default(false)
+  usable         Boolean?
   artifactSha256 String?
   raw            Json
   indexedAt      DateTime   @default(now())
@@ -284,6 +284,7 @@ model Claim {
   @@unique([deploymentId, onchainId])
   @@unique([coverageId, incidentId])
   @@index([claimant, status])
+  @@index([incidentId])
 }
 
 model ReporterSnapshot {

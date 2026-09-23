@@ -28,8 +28,8 @@ export function PageHeader({ eyebrow, title, description, actions }: { eyebrow?:
   </header>;
 }
 
-export function Metric({ label, value, detail, tone = "default" }: { label: string; value: ReactNode; detail?: ReactNode; tone?: "default" | "accent" | "dark" }) {
-  return <div className={`metric metric-${tone}`}><span className="metric-label">{label}</span><strong>{value}</strong>{detail ? <span className="metric-detail">{detail}</span> : null}</div>;
+export function Metric({ label, value, detail, tone = "default", compactValue = false }: { label: string; value: ReactNode; detail?: ReactNode; tone?: "default" | "accent" | "dark"; compactValue?: boolean }) {
+  return <div className={`metric metric-${tone}${compactValue ? " metric-compact" : ""}`}><span className="metric-label">{label}</span><strong>{value}</strong>{detail ? <span className="metric-detail">{detail}</span> : null}</div>;
 }
 
 export function Panel({ children, className = "", title, kicker, action }: { children: ReactNode; className?: string; title?: string; kicker?: string; action?: ReactNode }) {
@@ -75,12 +75,11 @@ export function DetailMeta({ row }: { row: JsonRecord }) {
   return <div className="detail-meta"><span>ID <b className="mono">{rowValue(row, "onchainId", rowValue(row, "id"))}</b></span>{row.address ? <span>Address <b className="mono">{formatAddress(row.address)}</b></span> : null}{row.indexedAt ? <span>Indexed {formatDate(row.indexedAt)}</span> : null}</div>;
 }
 
-export function EvidenceBadge({ authoritative, usable, reporterAuthorized, excluded = false }: { authoritative: boolean; usable: boolean; reporterAuthorized: boolean; excluded?: boolean }) {
-  if (authoritative && excluded) return <span className="evidence-badge evidence-review">AUTHORITATIVE · EXCLUDED</span>;
-  if (authoritative && usable && reporterAuthorized) return <span className="evidence-badge evidence-authoritative">AUTHORITATIVE</span>;
-  if (authoritative) return <span className="evidence-badge evidence-review">AUTHORITATIVE · REVIEW</span>;
-  if (!usable) return <span className="evidence-badge evidence-invalid">INVALID / UNUSABLE</span>;
-  return <span className="evidence-badge evidence-supplemental">SUPPLEMENTAL</span>;
+export function EvidenceBadge({ authoritative, excluded = false, supporting = false }: { authoritative: boolean; excluded?: boolean; supporting?: boolean }) {
+  const provenance = authoritative ? "AUTHORITATIVE" : "SUPPLEMENTAL";
+  if (excluded) return <span className="evidence-badge evidence-review">{provenance} · EXCLUDED</span>;
+  if (supporting) return <span className="evidence-badge evidence-authoritative">{provenance} · SUPPORTING</span>;
+  return <span className={`evidence-badge ${authoritative ? "evidence-review" : "evidence-supplemental"}`}>{provenance} · CHECKS NOT RUN</span>;
 }
 
 export function HashValue({ value }: { value: unknown }) {

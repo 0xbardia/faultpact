@@ -28,7 +28,31 @@ export function formatGen(value: unknown): string {
   if (amount === null) return text(value);
   const whole = amount / 1_000_000_000_000_000_000n;
   const fraction = (amount % 1_000_000_000_000_000_000n).toString().padStart(18, "0").replace(/0+$/, "");
-  return `${whole.toLocaleString()}${fraction ? `.${fraction.slice(0, 6)}` : ""} GEN`;
+  return `${whole.toLocaleString()}${fraction ? `.${fraction}` : ""} GEN`;
+}
+
+export function genDecimal(value: unknown): string {
+  const amount = digits(value);
+  if (amount === null) return "";
+  const whole = amount / 1_000_000_000_000_000_000n;
+  const fraction = (amount % 1_000_000_000_000_000_000n).toString().padStart(18, "0").replace(/0+$/, "");
+  return `${whole}${fraction ? `.${fraction}` : ""}`;
+}
+
+export function parseGen(value: string): bigint | null {
+  if (!/^\d+(?:\.\d{0,18})?$/.test(value)) return null;
+  const [whole, fraction = ""] = value.split(".");
+  try { return BigInt(whole ?? "0") * 1_000_000_000_000_000_000n + BigInt((fraction + "0".repeat(18)).slice(0, 18)); }
+  catch { return null; }
+}
+
+export function formatDurationSeconds(value: unknown): string {
+  const seconds = digits(value);
+  if (seconds === null) return text(value);
+  if (seconds >= 86_400n && seconds % 86_400n === 0n) return `${seconds / 86_400n} days`;
+  if (seconds >= 3_600n && seconds % 3_600n === 0n) return `${seconds / 3_600n} hours`;
+  if (seconds >= 60n && seconds % 60n === 0n) return `${seconds / 60n} min`;
+  return `${seconds} sec`;
 }
 
 export function formatPpm(value: unknown, suffix = "%"): string {
@@ -41,6 +65,20 @@ export function formatPpm(value: unknown, suffix = "%"): string {
 
 export function formatPpmAsPercentage(value: unknown): string {
   return formatPpm(value);
+}
+
+export function formatBpsAsPercentage(value: unknown): string {
+  const bps = digits(value);
+  if (bps === null) return text(value);
+  const whole = bps / 100n;
+  const fraction = (bps % 100n).toString().padStart(2, "0").replace(/0+$/, "");
+  return `${whole}${fraction ? `.${fraction}` : ""}%`;
+}
+
+export function formatUnixSeconds(value: unknown): string {
+  const seconds = digits(value);
+  if (seconds === null || seconds > 8_640_000_000_000n) return text(value);
+  return formatDate(new Date(Number(seconds * 1000n)).toISOString());
 }
 
 export function formatDate(value: unknown): string {

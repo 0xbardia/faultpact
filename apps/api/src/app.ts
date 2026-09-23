@@ -22,9 +22,21 @@ type Params = Record<string, string>;
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 
+class ApiInputError extends Error {}
+
+function routeFailure(reply: { code: (status: number) => { send: (body: unknown) => unknown } }, error: unknown, logger?: Logger) {
+  if (error instanceof ApiInputError) return reply.code(400).send({ error: error.message });
+  logger?.error({ err: error }, "API operation failed");
+  return reply.code(503).send({ error: "Temporarily unavailable" });
+}
+
+function indexerIsFresh(cursor: { status?: string; lastSuccessAt?: Date | null } | null): boolean {
+  return cursor?.status === "HEALTHY" && cursor.lastSuccessAt instanceof Date && Date.now() - cursor.lastSuccessAt.getTime() <= 90_000;
+}
+
 function queryText(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string" || value.length > 128) throw new Error(`${field} is too long`);
+  if (typeof value !== "string" || value.length > 128) throw new ApiInputError(`${field} must be at most 128 characters`);
   return value;
 }
 
@@ -32,8 +44,13 @@ function responseData(data: unknown, extra: Record<string, unknown> = {}) { retu
 
 function onchainId(params: Params): ReturnType<typeof decimal> {
   const value = params.id;
-  if (!value || !/^\d+$/.test(value)) throw new Error("id must be an unsigned decimal string");
+  if (!value || !/^\d+$/.test(value)) throw new ApiInputError("id must be an unsigned decimal string");
   return decimal(value);
+}
+
+function pageQuery(query: Record<string, unknown>) {
+  try { return parsePage(query); }
+  catch (error) { throw new ApiInputError(errorMessage(error)); }
 }
 
 export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> {
@@ -51,7 +68,8 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
       await deps.db.$queryRaw`SELECT 1`;
       return responseData({ process: "ok", database: "ok", contract: "configured" });
     } catch (error) {
-      return reply.code(503).send(responseData({ process: "ok", database: "error" }, { error: errorMessage(error) }));
+      deps.logger?.error({ err: error }, "API health database check failed");
+      return reply.code(503).send(responseData({ process: "ok", database: "error" }, { error: "Database unavailable" }));
     }
   });
 
@@ -62,7 +80,7 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
       try { checks.chain = (await deps.contract.chainIdFromRpc({ maxAgeMs: 30_000 })) === FROZEN_CHAIN_ID ? "ok" : "wrong_chain"; } catch { checks.chain = "error"; }
     } else checks.chain = "unverified";
     const cursor = await deps.db.syncCursor.findUnique({ where: { deploymentId_entityKind: { deploymentId: deps.deploymentId, entityKind: "all" } } });
-    checks.indexer = cursor?.status === "HEALTHY" ? "ok" : "degraded";
+    checks.indexer = indexerIsFresh(cursor) ? "ok" : "degraded";
     const ready = Object.values(checks).every((value) => value === "ok");
     return reply.code(ready ? 200 : 503).send(responseData({ ready, checks, deployment: { chainId: FROZEN_CHAIN_ID, contractAddress: FROZEN_CONTRACT_ADDRESS, rpc: FROZEN_RPC_URL }, indexedAt: cursor?.lastSuccessAt ?? null }));
   });
@@ -133,9 +151,10 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
           indexedAt: aggregate?.windowEnd ?? sample?.observedAt ?? target.updatedAt,
         };
       });
-      return reply.send(responseData(rows, { source: "indexed_monitoring_state", indexedAt: new Date().toISOString() }));
+      return reply.send(responseData(rows, { source: "indexed_monitoring_state" }));
     } catch (error) {
-      return reply.code(503).send({ error: errorMessage(error) });
+      deps.logger?.error({ err: error }, "Monitoring read failed");
+      return reply.code(503).send({ error: "Monitoring data temporarily unavailable" });
     }
   });
 
@@ -144,10 +163,15 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
     app.get(`/api/v1/${resource}`, async (request, reply) => {
       try {
         const query = request.query as Record<string, unknown>;
-        const page = parsePage(query);
-        const result = await listIndexed(deps.db, resource, { deploymentId: deps.deploymentId, skip: page.cursor, take: page.limit, search: queryText(query.search, "search"), status: queryText(query.status, "status"), serviceId: queryText(query.serviceId, "serviceId"), providerId: queryText(query.providerId, "providerId"), buyer: queryText(query.buyer, "buyer"), claimant: queryText(query.claimant, "claimant"), faultDomain: queryText(query.faultDomain, "faultDomain") });
-        return reply.send(responseData(result.rows, { pagination: { cursor: page.cursor, limit: page.limit, total: result.total, nextCursor: page.cursor + result.rows.length < result.total ? page.cursor + result.rows.length : null }, indexedAt: new Date().toISOString() }));
-      } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+        const page = pageQuery(query);
+        const incidentId = queryText(query.incidentId, "incidentId");
+        if (incidentId !== undefined && !/^\d+$/.test(incidentId)) throw new ApiInputError("incidentId must be an unsigned decimal string");
+        const [result, cursor] = await Promise.all([
+          listIndexed(deps.db, resource, { deploymentId: deps.deploymentId, skip: page.cursor, take: page.limit, search: queryText(query.search, "search"), status: queryText(query.status, "status"), serviceId: queryText(query.serviceId, "serviceId"), providerId: queryText(query.providerId, "providerId"), buyer: queryText(query.buyer, "buyer"), claimant: queryText(query.claimant, "claimant"), incidentId, faultDomain: queryText(query.faultDomain, "faultDomain") }),
+          deps.db.syncCursor.findUnique({ where: { deploymentId_entityKind: { deploymentId: deps.deploymentId, entityKind: "all" } }, select: { lastSuccessAt: true } }),
+        ]);
+        return reply.send(responseData(result.rows, { pagination: { cursor: page.cursor, limit: page.limit, total: result.total, nextCursor: page.cursor + result.rows.length < result.total ? page.cursor + result.rows.length : null }, indexedAt: cursor?.lastSuccessAt ?? null }));
+      } catch (error) { return routeFailure(reply, error, deps.logger); }
     });
   }
 
@@ -158,16 +182,16 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
         const id = onchainId(request.params as Params);
         const model = resource === "providers" ? deps.db.provider : resource === "services" ? deps.db.service : resource === "pacts" ? deps.db.pact : resource === "coverages" ? deps.db.coverage : resource === "incidents" ? deps.db.incident : resource === "evidence" ? deps.db.evidence : resource === "challenges" ? deps.db.challenge : deps.db.claim;
         const include = resource === "pacts"
-          ? { terms: true, capacity: true }
+          ? { terms: true, capacity: true, service: true, provider: true }
           : resource === "providers"
             ? { vault: true, stats: true }
-            : resource === "coverages"
-              ? { pact: { include: { terms: true } } }
+          : resource === "coverages"
+              ? { pact: { include: { terms: true, provider: true, service: true } } }
               : undefined;
         const row = await (model as { findFirst: (args: unknown) => Promise<unknown> }).findFirst({ where: { deploymentId: deps.deploymentId, onchainId: id }, ...(include ? { include } : {}) });
         if (!row) return reply.code(404).send({ error: "not found" });
         return reply.send(responseData(row, { source: "indexed_contract_state" }));
-      } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+      } catch (error) { return routeFailure(reply, error, deps.logger); }
     });
   }
 
@@ -176,7 +200,7 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
       const pact = await deps.db.pact.findFirst({ where: { deploymentId: deps.deploymentId, onchainId: onchainId(request.params as Params) }, include: { capacity: true } });
       if (!pact) return reply.code(404).send({ error: "not found" });
       return reply.send(responseData(pact.capacity, { source: "indexed_contract_state" }));
-    } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+    } catch (error) { return routeFailure(reply, error, deps.logger); }
   });
   app.get("/api/v1/incidents/:id/evidence", async (request, reply) => {
     try {
@@ -184,32 +208,38 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
       if (!incident) return reply.code(404).send({ error: "not found" });
       const rows = await deps.db.evidence.findMany({ where: { incidentId: incident.id }, orderBy: { onchainId: "asc" }, take: 100 });
       return reply.send(responseData(rows, { source: "indexed_contract_state" }));
-    } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+    } catch (error) { return routeFailure(reply, error, deps.logger); }
   });
   app.get("/api/v1/incidents/:id/resolution", async (request, reply) => {
     try {
       const incident = await deps.db.incident.findFirst({ where: { deploymentId: deps.deploymentId, onchainId: onchainId(request.params as Params) }, include: { resolution: true } });
       if (!incident) return reply.code(404).send({ error: "not found" });
       return reply.send(responseData(incident.resolution, { source: "indexed_contract_state" }));
-    } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+    } catch (error) { return routeFailure(reply, error, deps.logger); }
   });
   app.get("/api/v1/incidents/:id/challenge", async (request, reply) => {
     try {
       const incident = await deps.db.incident.findFirst({ where: { deploymentId: deps.deploymentId, onchainId: onchainId(request.params as Params) }, include: { challenges: { include: { evidence: true } } } });
       if (!incident) return reply.code(404).send({ error: "not found" });
       return reply.send(responseData(incident.challenges[0] ?? null, { source: "indexed_contract_state" }));
-    } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+    } catch (error) { return routeFailure(reply, error, deps.logger); }
   });
 
   const artifactHandler = async (request: { params: unknown }, reply: { code: (status: number) => typeof reply; header: (name: string, value: string) => typeof reply; type: (value: string) => typeof reply; send: (value: Buffer) => unknown }) => {
     try {
       const params = request.params as Params;
-      if (!params.sha256) throw new Error("sha256 is required");
-      const sha256 = normalizeHash256(params.sha256);
+      if (!params.sha256) throw new ApiInputError("sha256 is required");
+      let sha256: string;
+      try { sha256 = normalizeHash256(params.sha256); }
+      catch { throw new ApiInputError("sha256 must be a 64-character hexadecimal hash"); }
       const artifact = await deps.db.evidenceArtifact.findUnique({ where: { sha256 } });
       if (!artifact) return reply.code(404).send(Buffer.from("not found"));
       return reply.header("ETag", `\"${sha256}\"`).header("Cache-Control", "public, immutable").type(artifact.contentType).send(Buffer.from(artifact.bytes));
-    } catch (error) { return reply.code(400).send(Buffer.from(errorMessage(error))); }
+    } catch (error) {
+      if (error instanceof ApiInputError) return reply.code(400).send(Buffer.from(error.message));
+      deps.logger?.error({ err: error }, "Evidence artifact read failed");
+      return reply.code(503).send(Buffer.from("temporarily unavailable"));
+    }
   };
   app.get("/api/v1/evidence-artifacts/:sha256/raw", artifactHandler as never);
   app.get("/evidence/:sha256", artifactHandler as never);
@@ -226,9 +256,13 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
     if (body.timeoutMs !== undefined && timeoutMs === 5000 && body.timeoutMs !== 5000) return reply.code(400).send({ error: "timeoutMs must be 100..60000" });
     try {
       await resolveSafeEndpoint(body.endpointUrl, { allowHttp: deps.probeHttpAllowed });
+    } catch {
+      return reply.code(400).send({ error: "endpointUrl must resolve to a public RPC endpoint" });
+    }
+    try {
       const target = await deps.db.monitorTarget.create({ data: { name: body.name, endpointUrl: body.endpointUrl, expectedChainId: body.expectedChainId, region: body.region.trim().toLowerCase(), profile: (body.profile ?? {}) as never, intervalMs, timeoutMs, evidenceMode: body.evidenceMode === "evidence" || body.evidenceMode === "auto" ? body.evidenceMode : "observe" } });
       return reply.code(201).send(responseData(target));
-    } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); }
+    } catch (error) { return routeFailure(reply, error, deps.logger); }
   });
 
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {

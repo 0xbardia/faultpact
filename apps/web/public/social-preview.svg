@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#151515"/>
+  <path d="M0 505H1200" stroke="#383832"/>
+  <g fill="#fffdf8" font-family="Arial, Helvetica, sans-serif">
+    <text x="78" y="84" font-size="18" font-weight="700" letter-spacing="4">FAULTPACT</text>
+    <text x="78" y="232" font-size="86" font-weight="700" letter-spacing="-5">Reliability with</text>
+    <text x="78" y="325" fill="#f35f3d" font-size="86" font-weight="700" letter-spacing="-5">consequences.</text>
+    <text x="82" y="391" fill="#b8b7af" font-size="24">Providers bond capital behind service commitments.</text>
+    <text x="82" y="428" fill="#b8b7af" font-size="24">Evidence informs Incident facts; frozen terms settle Claims.</text>
+  </g>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">
+    <circle cx="101" cy="530" r="9" fill="#ccef50"/><text x="124" y="536" fill="#fffdf8">BONDED SLA</text>
+    <path d="M267 530h55" stroke="#68665f" stroke-width="2"/><path d="m315 523 8 7-8 7" fill="none" stroke="#68665f" stroke-width="2"/>
+    <circle cx="351" cy="530" r="9" fill="#f35f3d"/><text x="374" y="536" fill="#fffdf8">EVIDENCE</text>
+    <path d="M493 530h55" stroke="#68665f" stroke-width="2"/><path d="m541 523 8 7-8 7" fill="none" stroke="#68665f" stroke-width="2"/>
+    <circle cx="577" cy="530" r="9" fill="#ccef50"/><text x="600" y="536" fill="#fffdf8">CANONICAL FACTS</text>
+    <path d="M775 530h55" stroke="#68665f" stroke-width="2"/><path d="m823 523 8 7-8 7" fill="none" stroke="#68665f" stroke-width="2"/>
+    <circle cx="859" cy="530" r="9" fill="#f35f3d"/><text x="882" y="536" fill="#fffdf8">SETTLEMENT</text>
+  </g>
+  <text x="82" y="590" fill="#aaa99e" font-family="monospace" font-size="15" letter-spacing="2">GENLAYER STUDIO DEVELOPMENT PREVIEW · CHAIN 61997</text>
+  <text x="1115" y="590" fill="#aaa99e" font-family="monospace" font-size="15" text-anchor="end">FAULTPACT.BYDX.FUN</text>
+</svg>
