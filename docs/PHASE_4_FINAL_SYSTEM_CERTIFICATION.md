@@ -4,6 +4,30 @@
 
 **FAULTPACT V1 FINAL SYSTEM CERTIFICATION PARTIAL — RELEASE BLOCKED**
 
+## Phase 4.2 Re-audit Addendum — 2026-09-23
+
+The candidate results below are historical. Phase 4.2 independently rechecked
+the live service and corrected two release-quality issues:
+
+- A full host filesystem had stopped PostgreSQL. Reclaiming only package-manager
+  cache and restoring the database brought the service back; the frozen
+  PostgreSQL data was preserved.
+- Studio 429/indexer freshness incorrectly made `/api/v1/ready` return 503
+  despite database-backed reads being available. Readiness now separates
+  database/deployment availability from `externalRpc` and indexer degradation.
+  Live readiness, health, and indexed list routes return HTTP 200; both
+  `externalRpc` and `indexer` accurately show `degraded` for worker 429s.
+- The integration test now provisions migrations against a dedicated local
+  `_test` database without a shell `DATABASE_URL`. Unit tests pass 78/78 and
+  deterministic integration passes 1/1. The explicit live contract test was
+  separated and currently receives Studio HTTP 429 with a long Retry-After.
+
+The required Provider/customer write surface, real Rabby/MetaMask UI writes,
+post-write indexer/API/UI convergence, full post-fix Playwright run, and live
+schema certification remain unproven. The release gate remains **BLOCKED**;
+no `v1.0.0` tag or release was created. See
+`PHASE_4_2_RELEASE_BLOCKER_CLOSURE.md` for the detailed current record.
+
 The deployed application is reachable over HTTPS and its read-only product
 surface, API, database, worker, indexer, evidence endpoint, and contract-source
 comparison passed the checks that were available. Final release is blocked for

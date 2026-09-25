@@ -40,6 +40,12 @@ Operational routes are `/api/v1/health`, `/api/v1/ready`, `/api/v1/status`, and
 `/api/docs`. Internal target mutation is disabled when `ADMIN_API_TOKEN` is
 absent and otherwise requires `Authorization: Bearer ...`.
 
+`/api/v1/ready` requires database connectivity and a previously verified
+frozen deployment. A live startup check is used when available; an RPC cooldown
+can start the API from the validated cached deployment and produce HTTP 200
+with `degraded: true` while indexed reads remain available. Database loss or an
+unverified deployment returns 503.
+
 Responses identify indexed data and include freshness/source context where
 applicable. Payouts and eligibility shown by the API are indexed contract
 results, never backend decisions. No user wallet key is accepted by the API.

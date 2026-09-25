@@ -1,17 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionReview } from "./actions";
-import { asRecord, asRows, text } from "../lib/api";
+import { apiGet, asRecord, asRows, text, waitForIndexed, type JsonRecord } from "../lib/api";
 import { useApi } from "../lib/use-api";
-import { formatBpsAsPercentage, formatDurationSeconds, formatGen, genDecimal, parseGen, rowValue } from "../lib/format";
+import { formatBpsAsPercentage, formatDurationInput, formatDurationSeconds, formatGen, genDecimal, parseDurationInput, parseGen, rowValue } from "../lib/format";
 import { ErrorState, Freshness, KeyValue, LoadingState, PageHeader, Panel } from "./ui";
 
 export function PurchaseFlow({ selected }: { selected: string }) {
   const [coverageLimit, setCoverageLimit] = useState("");
   const [durationSeconds, setDurationSeconds] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [createdCoverageId, setCreatedCoverageId] = useState("");
+  const previousCoverageIds = useRef<Set<string>>(new Set());
   const list = useApi<Record<string, unknown>[]>("/pacts", { limit: 25 });
   const pacts = asRows(list.data?.data);
   const id = selected || rowValue(pacts[0], "onchainId", "0");
@@ -30,12 +32,13 @@ export function PurchaseFlow({ selected }: { selected: string }) {
   useEffect(() => {
     if (id !== "0") {
       setCoverageLimit(genDecimal(minAmount));
-      setDurationSeconds(minDuration);
+      setDurationSeconds(formatDurationInput(minDuration));
     }
   }, [id, minAmount, minDuration]);
 
   const limit = parseGen(coverageLimit);
-  const duration = /^\d+$/.test(durationSeconds) ? BigInt(durationSeconds) : 0n;
+  const parsedDuration = parseDurationInput(durationSeconds);
+  const duration = parsedDuration ?? 0n;
   const bps = /^\d+$/.test(premiumBps) ? BigInt(premiumBps) : 0n;
   const minLimit = /^\d+$/.test(minAmount) ? BigInt(minAmount) : 0n;
   const maxLimit = /^\d+$/.test(maxAmount) ? BigInt(maxAmount) : 0n;
@@ -43,10 +46,10 @@ export function PurchaseFlow({ selected }: { selected: string }) {
   const minDurationValue = /^\d+$/.test(minDuration) ? BigInt(minDuration) : 0n;
   const maxDurationValue = /^\d+$/.test(maxDuration) ? BigInt(maxDuration) : 0n;
   const yearSeconds = 365n * 24n * 60n * 60n;
-  const premium = limit && duration && bps
-    ? ((limit * bps * duration) + 10_000n * yearSeconds - 1n) / (10_000n * yearSeconds) || 1n
+  const premium = limit && duration
+    ? (((limit * bps * duration) + 10_000n * yearSeconds - 1n) / (10_000n * yearSeconds)) || 1n
     : 0n;
-  const validPurchase = limit !== null && limit > 0n && duration > 0n && minLimit > 0n && maxLimit > 0n && minDurationValue > 0n && maxDurationValue > 0n
+  const validPurchase = limit !== null && limit > 0n && parsedDuration !== null && duration > 0n && minLimit > 0n && maxLimit > 0n && minDurationValue > 0n && maxDurationValue > 0n
     && limit >= minLimit && limit <= maxLimit && limit <= capacity && duration >= minDurationValue && duration <= maxDurationValue;
 
   if (list.loading) return <LoadingState />;
@@ -74,9 +77,9 @@ export function PurchaseFlow({ selected }: { selected: string }) {
             <input inputMode="decimal" value={coverageLimit} onChange={(event) => setCoverageLimit(event.target.value.replace(/[^0-9.]/g, ""))} />
             <small>Allowed: {genDecimal(minAmount)} to {genDecimal(maxAmount)} GEN</small>
           </label>
-          <label>Duration (seconds)
-            <input inputMode="numeric" value={durationSeconds} onChange={(event) => setDurationSeconds(event.target.value.replace(/[^0-9]/g, ""))} />
-            <small>Allowed: {formatDurationSeconds(minDuration)} to {formatDurationSeconds(maxDuration)}</small>
+          <label>Coverage duration
+            <input inputMode="text" value={durationSeconds} onChange={(event) => setDurationSeconds(event.target.value.replace(/[^0-9dhms ]/gi, ""))} placeholder="e.g. 30d or 720h" />
+            <small>Use days, hours, minutes or seconds. Allowed: {formatDurationSeconds(minDuration)} to {formatDurationSeconds(maxDuration)}</small>
           </label>
         </div>
         <div className="kv-grid compact">
@@ -88,7 +91,8 @@ export function PurchaseFlow({ selected }: { selected: string }) {
           ? <p className="review-warning" role="status">Enter a Coverage limit and duration within the Pact terms and available capital.</p>
           : <p className="muted">This estimate rounds up to the smallest GEN unit. The wallet shows the exact payment; the contract checks capacity again when the transaction executes.</p>}
       </Panel>
-      <ActionReview method="buy_coverage" title="Coverage purchase review" description="The wallet submits this purchase to the frozen GenLayer deployment. The contract checks the amount and capacity again before creating Coverage." args={[["pact_id", id], ["coverage_limit", `${coverageLimit || "—"} GEN`], ["duration_seconds", durationSeconds || "—"], ["max_premium", formatGen(premium)], ["payment", formatGen(premium)]]} transaction={validPurchase ? { args: [BigInt(id), limit ?? 0n, duration, premium], value: premium } : undefined} disabledReason="Enter a Coverage limit and duration within the Pact terms and available capital." onFinalized={() => setRefreshKey((value) => value + 1)} />
+      <ActionReview key={`${id}:${coverageLimit}:${durationSeconds}`} method="buy_coverage" title="Coverage purchase review" description="The wallet submits this purchase to the frozen GenLayer deployment. The contract checks the amount and capacity again before creating Coverage." args={[["Pact", `#${id}`], ["Coverage limit", `${coverageLimit || "—"} GEN`], ["Duration", formatDurationSeconds(durationSeconds)], ["Maximum premium", formatGen(premium)], ["Wallet payment", formatGen(premium)]]} transaction={validPurchase ? { args: [BigInt(id), limit ?? 0n, duration, premium], value: premium } : undefined} disabledReason="Enter a Coverage limit and duration within the Pact terms and available capital." onWalletConnected={async (address) => { const existing = await apiGet<JsonRecord[]>("/coverages", { buyer: address, limit: 100 }); previousCoverageIds.current = new Set(asRows(existing.data).map((row) => rowValue(row, "onchainId"))); }} onFinalized={async (_state, address) => { const result = await waitForIndexed(() => apiGet<JsonRecord[]>("/coverages", { buyer: address, limit: 100 }), (current) => asRows(current.data).some((row) => !previousCoverageIds.current.has(rowValue(row, "onchainId")))); const created = asRows(result.data).find((row) => !previousCoverageIds.current.has(rowValue(row, "onchainId"))); if (created) setCreatedCoverageId(rowValue(created, "onchainId")); setRefreshKey((value) => value + 1); }} />
+      {createdCoverageId ? <p className="action-ready" role="status">Coverage is indexed. <Link href={`/coverages/${createdCoverageId}`}>Open Coverage #{createdCoverageId} →</Link></p> : null}
     </div>
   </main>;
 }

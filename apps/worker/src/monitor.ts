@@ -2,23 +2,68 @@ import type { PrismaClient, Prisma } from "@prisma/client";
 import type { Logger } from "pino";
 import { decimal } from "@faultpact/db";
 import { aggregateSamples, assertArtifactSize, persistImmutableArtifact, nextCandidateState, probeRpc, type Aggregate, type RpcProbeResult } from "@faultpact/monitoring";
-import { jsonSafe, sleep } from "@faultpact/shared";
+import { isFrozenRpcUrl, jsonSafe, sleep } from "@faultpact/shared";
 
 function jsonInput(value: unknown): Prisma.InputJsonValue { return jsonSafe(value) as Prisma.InputJsonValue; }
 
 export class MonitoringWorker {
   private running = false;
-  constructor(private readonly db: PrismaClient, private readonly options: { region: string; mode: string; timeoutMs: number; maxResponseBytes: number; evidenceMaxBytes?: number; rawRetentionSeconds?: number; referenceUrl?: string; evidencePublicBaseUrl?: string; reporterMode?: string; logger?: Logger; workerId?: string }) {}
+  private cooldownLogged = false;
+  private schedulerErrorLogged = false;
+  constructor(private readonly db: PrismaClient, private readonly options: { region: string; mode: string; timeoutMs: number; maxResponseBytes: number; evidenceMaxBytes?: number; rawRetentionSeconds?: number; referenceUrl?: string; evidencePublicBaseUrl?: string; reporterMode?: string; logger?: Logger; workerId?: string; genlayerProbeIntervalMs?: number; rpcCall?: (method: string, params?: readonly unknown[], options?: { subsystem?: string }) => Promise<unknown>; rpcCooldownUntil?: () => number | Promise<number> }) {}
+
+  private async currentCooldown(): Promise<number> {
+    if (!this.options.rpcCooldownUntil) return 0;
+    try {
+      const value = await this.options.rpcCooldownUntil();
+      this.schedulerErrorLogged = false;
+      return value;
+    } catch (error) {
+      if (!this.schedulerErrorLogged) this.options.logger?.error({ err: error }, "RPC scheduler state unreadable; monitoring suspended fail-safe");
+      this.schedulerErrorLogged = true;
+      return Date.now() + 60_000;
+    }
+  }
 
   async runOnce(): Promise<number> {
     const retentionSeconds = this.options.rawRetentionSeconds ?? 604800;
     await this.db.probeSample.deleteMany({ where: { region: this.options.region, observedAt: { lt: new Date(Date.now() - retentionSeconds * 1000) } } });
     const targets = await this.db.monitorTarget.findMany({ where: { enabled: true, region: this.options.region }, take: 1000, orderBy: { id: "asc" } });
     let successes = 0;
+    let suppressed = 0;
+    let schedulerErrors = 0;
+    let latestProbeAt: Date | undefined;
+    const referenceUsesGenLayer = this.options.referenceUrl ? isFrozenRpcUrl(this.options.referenceUrl) : false;
+    let schedulerRelevant = referenceUsesGenLayer;
     for (const target of targets) {
       const previous = await this.db.probeSample.findFirst({ where: { targetId: target.id }, orderBy: { observedAt: "desc" } });
+      if (previous?.observedAt && (!latestProbeAt || previous.observedAt > latestProbeAt)) latestProbeAt = previous.observedAt;
       const reference = previous?.referenceBlock ? BigInt(previous.referenceBlock.toString()) : undefined;
-      const result = await probeRpc({ probeId: `${target.id}-${Date.now()}`, url: target.endpointUrl, expectedChainId: target.expectedChainId, referenceUrl: this.options.referenceUrl, timeoutMs: Math.min(this.options.timeoutMs, target.timeoutMs), maxResponseBytes: this.options.maxResponseBytes, staleHead: reference === undefined ? undefined : { previousTarget: previous?.targetBlock ? BigInt(previous.targetBlock.toString()) : undefined, previousReference: reference, minimumReferenceAdvance: 1n } });
+      const targetUsesGenLayer = isFrozenRpcUrl(target.endpointUrl);
+      const usesGenLayer = targetUsesGenLayer || referenceUsesGenLayer;
+      schedulerRelevant ||= usesGenLayer;
+      if (usesGenLayer && !this.options.rpcCall) {
+        schedulerErrors += 1;
+        suppressed += 1;
+        this.options.logger?.error({ targetId: target.id, endpointUrl: target.endpointUrl }, "Studio RPC target requires the shared scheduler callback; probe suppressed");
+        continue;
+      }
+      const probeInterval = targetUsesGenLayer ? Math.max(target.intervalMs, this.options.genlayerProbeIntervalMs ?? 1_800_000) : target.intervalMs;
+      if (previous?.observedAt && Date.now() - previous.observedAt.getTime() < probeInterval) { suppressed += 1; continue; }
+      const cooldownUntil = usesGenLayer ? await this.currentCooldown() : 0;
+      if (cooldownUntil > Date.now()) { suppressed += 1; continue; }
+      const result = await probeRpc({
+        probeId: `${target.id}-${Date.now()}`,
+        url: target.endpointUrl,
+        expectedChainId: target.expectedChainId,
+        referenceUrl: this.options.referenceUrl,
+        timeoutMs: Math.min(this.options.timeoutMs, target.timeoutMs),
+        maxResponseBytes: this.options.maxResponseBytes,
+        staleHead: reference === undefined ? undefined : { previousTarget: previous?.targetBlock ? BigInt(previous.targetBlock.toString()) : undefined, previousReference: reference, minimumReferenceAdvance: 1n },
+        ...(targetUsesGenLayer && this.options.rpcCall ? { rpcCall: this.options.rpcCall } : {}),
+        ...(referenceUsesGenLayer && this.options.rpcCall ? { referenceRpcCall: this.options.rpcCall } : {}),
+      });
+      latestProbeAt = result.observedAt;
       if (result.success) successes += 1;
       await this.storeSample(target.id, result);
       const aggregate = await this.aggregateTarget(target.id, 300);
@@ -31,9 +76,18 @@ export class MonitoringWorker {
           await this.storeEvidenceArtifact(serviceId, aggregate, result, target.id);
         }
       }
-      if (target.serviceId !== null) await this.updateCandidate(target.id, target.serviceId, result);
+      const schedulerSuppressedFailure = usesGenLayer && result.errorCode === "HTTP_429";
+      if (target.serviceId !== null && !schedulerSuppressedFailure) await this.updateCandidate(target.id, target.serviceId, result);
     }
-    await this.db.workerHeartbeat.upsert({ where: { workerId: this.options.workerId ?? `monitor-${this.options.region}` }, create: { workerId: this.options.workerId ?? `monitor-${this.options.region}`, role: "monitor", region: this.options.region, mode: this.options.mode, lastProbeAt: new Date(), status: "HEALTHY", details: jsonInput({ targetCount: targets.length, successes, reporterMode: this.options.reporterMode ?? "MONITOR_ONLY" }) }, update: { lastProbeAt: new Date(), status: "HEALTHY", details: jsonInput({ targetCount: targets.length, successes, reporterMode: this.options.reporterMode ?? "MONITOR_ONLY" }) } });
+    const cooldownUntil = schedulerRelevant ? await this.currentCooldown() : 0;
+    const degraded = schedulerErrors > 0 || cooldownUntil > Date.now();
+    if (degraded && !this.cooldownLogged) {
+      if (cooldownUntil > Date.now()) this.options.logger?.warn({ cooldownUntil: new Date(cooldownUntil).toISOString(), suppressed }, "Studio RPC entered cooldown; monitoring probes suspended");
+      this.cooldownLogged = true;
+    }
+    if (!degraded && this.cooldownLogged) { this.options.logger?.info("Studio RPC cooldown expired; monitoring scheduling resumed"); this.cooldownLogged = false; }
+    const heartbeatDetails = { targetCount: targets.length, successes, suppressed, schedulerErrors, cooldownUntil: cooldownUntil || null, reporterMode: this.options.reporterMode ?? "MONITOR_ONLY" };
+    await this.db.workerHeartbeat.upsert({ where: { workerId: this.options.workerId ?? `monitor-${this.options.region}` }, create: { workerId: this.options.workerId ?? `monitor-${this.options.region}`, role: "monitor", region: this.options.region, mode: this.options.mode, lastProbeAt: latestProbeAt ?? null, status: degraded ? "DEGRADED" : "HEALTHY", details: jsonInput(heartbeatDetails) }, update: { lastProbeAt: latestProbeAt ?? null, status: degraded ? "DEGRADED" : "HEALTHY", details: jsonInput(heartbeatDetails) } });
     return targets.length;
   }
 
@@ -78,7 +132,8 @@ export class MonitoringWorker {
     try {
       while (!signal.aborted) {
         try { await this.runOnce(); } catch (error) { this.options.logger?.error({ err: error }, "monitoring cycle failed"); }
-        await new Promise<void>((resolve) => { const timer = setTimeout(resolve, intervalMs); signal.addEventListener("abort", () => { clearTimeout(timer); resolve(); }, { once: true }); });
+        try { await sleep(intervalMs, signal); }
+        catch { if (!signal.aborted) throw new Error("monitoring wait failed"); }
       }
     } finally { this.running = false; }
   }

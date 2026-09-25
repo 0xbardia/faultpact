@@ -6,10 +6,10 @@ import { buildApp } from "../apps/api/src/app.js";
 const env = loadEnv();
 const db = createDb(env.DATABASE_URL);
 try {
-  const contract = await createLiveAdapter();
+  const contract = await createLiveAdapter({ minIntervalMs: env.GENLAYER_RPC_MIN_INTERVAL_MS, dailyBudget: env.GENLAYER_RPC_DAILY_BUDGET, ...(env.GENLAYER_RPC_BUDGET_STATE_FILE ? { budgetStateFile: env.GENLAYER_RPC_BUDGET_STATE_FILE } : {}) });
   const verification = await contract.verifyDeployment(undefined, { checkSchema: false });
   const deployment = await ensureDeployment(db, { network: "GenLayer Studio Development Preview", chainId: verification.chainId, contractAddress: contract.address, sourceSha256: verification.sourceSha256, sourceByteLength: verification.sourceByteLength, schemaFingerprint: verification.schemaFingerprint, schema: contract.schema });
-  const app = await buildApp({ db, contract, deploymentId: deployment.id, ...(env.ADMIN_API_TOKEN ? { adminToken: env.ADMIN_API_TOKEN } : {}), evidencePublicBaseUrl: env.EVIDENCE_PUBLIC_BASE_URL, probeHttpAllowed: env.PROBE_HTTP_ALLOWED });
+  const app = await buildApp({ db, contract, deploymentId: deployment.id, deploymentVerified: true, reconcileMaxAgeMs: env.INDEXER_RECONCILE_INTERVAL_MS * 2, ...(env.ADMIN_API_TOKEN ? { adminToken: env.ADMIN_API_TOKEN } : {}), evidencePublicBaseUrl: env.EVIDENCE_PUBLIC_BASE_URL, probeHttpAllowed: env.PROBE_HTTP_ALLOWED });
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();
   const port = typeof address === "object" && address ? address.port : 0;

@@ -26,6 +26,14 @@ services:
       GENLAYER_CHAIN_ID: "61997"
       FAULTPACT_CONTRACT_ADDRESS: 0xeb858957e3C426597245f6b59E260f1cC556Bf13
       FAULTPACT_SOURCE_SHA256: 4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e
+      INDEXER_POLL_INTERVAL_MS: "300000"
+      INDEXER_RECONCILE_INTERVAL_MS: "1800000"
+      INDEXER_RECONCILE_LIMIT: "10"
+      GENLAYER_RPC_MIN_INTERVAL_MS: "3000"
+      GENLAYER_RPC_DAILY_BUDGET: "1400"
+      GENLAYER_RPC_BUDGET_STATE_FILE: /var/lib/faultpact/studio-rpc-scheduler.json
+      GENLAYER_RPC_METRICS_INTERVAL_MS: "300000"
+      GENLAYER_RPC_PROBE_INTERVAL_MS: "1800000"
       API_HOST: 0.0.0.0
       API_PORT: "4310"
       EVIDENCE_PUBLIC_BASE_URL: https://faultpact.bydx.fun/evidence
@@ -34,6 +42,8 @@ services:
     command: ["sh", "-c", "pnpm db:migrate && node apps/api/dist/main.js"]
     ports:
       - "4310:4310"
+    volumes:
+      - faultpact-rpc-state:/var/lib/faultpact
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,6 +60,14 @@ services:
       GENLAYER_CHAIN_ID: "61997"
       FAULTPACT_CONTRACT_ADDRESS: 0xeb858957e3C426597245f6b59E260f1cC556Bf13
       FAULTPACT_SOURCE_SHA256: 4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e
+      INDEXER_POLL_INTERVAL_MS: "300000"
+      INDEXER_RECONCILE_INTERVAL_MS: "1800000"
+      INDEXER_RECONCILE_LIMIT: "10"
+      GENLAYER_RPC_MIN_INTERVAL_MS: "3000"
+      GENLAYER_RPC_DAILY_BUDGET: "1400"
+      GENLAYER_RPC_BUDGET_STATE_FILE: /var/lib/faultpact/studio-rpc-scheduler.json
+      GENLAYER_RPC_METRICS_INTERVAL_MS: "300000"
+      GENLAYER_RPC_PROBE_INTERVAL_MS: "1800000"
       PROBE_REGION: ${PROBE_REGION:-frankfurt}
       EVIDENCE_PUBLIC_BASE_URL: https://faultpact.bydx.fun/evidence
       REPORTER_PRIVATE_KEY: ${REPORTER_PRIVATE_KEY:-}
@@ -57,9 +75,12 @@ services:
       MONITOR_MODE: ${MONITOR_MODE:-observe}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     command: ["node", "apps/worker/dist/main.js"]
+    volumes:
+      - faultpact-rpc-state:/var/lib/faultpact
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   faultpact-postgres:
+  faultpact-rpc-state:

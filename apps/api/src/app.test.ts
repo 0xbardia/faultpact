@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
 import { sha256Bytes } from "@faultpact/shared";
 
-function fakeDb(artifact?: { sha256: string; contentType: string; bytes: Buffer }, lastSuccessAt = new Date()) {
+function fakeDb(artifact?: { sha256: string; contentType: string; bytes: Buffer }, lastSuccessAt = new Date(), lastError: string | null = null) {
   const providerRows: unknown[] = [];
   return {
     provider: { findMany: async () => providerRows, count: async () => providerRows.length, findFirst: async () => null },
@@ -14,7 +14,7 @@ function fakeDb(artifact?: { sha256: string; contentType: string; bytes: Buffer 
     challenge: { findMany: async () => [], count: async () => 0, findFirst: async () => null },
     claim: { findMany: async () => [], count: async () => 0, findFirst: async () => null },
     protocolSnapshot: { findUnique: async () => null },
-    syncCursor: { findUnique: async () => ({ status: "HEALTHY", lastSuccessAt }), findMany: async () => [] },
+    syncCursor: { findUnique: async () => ({ status: lastError ? "DEGRADED" : "HEALTHY", lastSuccessAt, lastError }), findMany: async () => [] },
     workerHeartbeat: { findMany: async () => [] },
     evidenceArtifact: { count: async () => 0, findUnique: async () => artifact ?? null },
     monitorTarget: { create: async (args: unknown) => args },
@@ -31,18 +31,83 @@ describe("Fastify API boundary", () => {
     await app.close();
   });
   it("API_READY", async () => {
-    const app = await buildApp({ db: fakeDb(), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const app = await buildApp({ db: fakeDb(), deploymentId: 1, deploymentVerified: true, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
     const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.ready).toBe(true);
+    expect(response.json().data.degraded).toBe(true);
     expect(response.json().data.checks.indexer).toBe("ok");
     await app.close();
   });
   it("API_READY_DETECTS_STALE_INDEX", async () => {
-    const stale = new Date(Date.now() - 120_000);
-    const app = await buildApp({ db: fakeDb(undefined, stale), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const stale = new Date(Date.now() - 11 * 60_000);
+    const app = await buildApp({ db: fakeDb(undefined, stale), deploymentId: 1, deploymentVerified: true, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.ready).toBe(true);
+    expect(response.json().data.degraded).toBe(true);
+    expect(response.json().data.checks.indexer).toBe("degraded");
+    await app.close();
+  });
+  it("API_READY_DEGRADES_ON_RPC_429_BUT_SERVES_INDEXED_DATA", async () => {
+    const app = await buildApp({
+      db: fakeDb(), deploymentId: 1, deploymentVerified: true,
+      contract: { chainIdFromRpc: async () => { throw new Error("HTTP 429"); } } as never,
+      evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false,
+    });
+    const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.ready).toBe(true);
+    expect(response.json().data.checks.externalRpc).toBe("degraded");
+    expect(response.json().data.checks.indexer).toBe("ok");
+    await app.close();
+  });
+  it("API_READY_REPORTS_INDEXER_RPC_COOLDOWN_AS_EXTERNAL_DEGRADATION", async () => {
+    const app = await buildApp({
+      db: fakeDb(undefined, new Date(), "provider: GenLayer RPC HTTP 429 cooldown"),
+      deploymentId: 1, deploymentVerified: true,
+      contract: { chainIdFromRpc: async () => 61997 } as never,
+      evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false,
+    });
+    const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.ready).toBe(true);
+    expect(response.json().data.degraded).toBe(true);
+    expect(response.json().data.checks.externalRpc).toBe("degraded");
+    await app.close();
+  });
+  it("RPC_COOLDOWN_DOES_NOT_KILL_API", async () => {
+    const chainId = vi.fn(async () => 61997);
+    const app = await buildApp({
+      db: fakeDb(), deploymentId: 1, deploymentVerified: true,
+      contract: { refreshRpcCooldown: async () => Date.now() + 60_000, chainIdFromRpc: chainId } as never,
+      evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false,
+    });
+    const ready = await app.inject({ method: "GET", url: "/api/v1/ready" });
+    const providers = await app.inject({ method: "GET", url: "/api/v1/providers" });
+    expect(ready.statusCode).toBe(200);
+    expect(ready.json().data.ready).toBe(true);
+    expect(ready.json().data.degraded).toBe(true);
+    expect(ready.json().data.checks.externalRpc).toBe("degraded");
+    expect(providers.statusCode).toBe(200);
+    expect(chainId).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("API_READY_REQUIRES_DATABASE", async () => {
+    const db = fakeDb() as unknown as { $queryRaw: () => Promise<unknown> };
+    db.$queryRaw = async () => { throw new Error("database offline"); };
+    const app = await buildApp({ db: db as never, deploymentId: 1, deploymentVerified: true, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
     const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
     expect(response.statusCode).toBe(503);
-    expect(response.json().data.checks.indexer).toBe("degraded");
+    expect(response.json().data.checks.database).toBe("error");
+    await app.close();
+  });
+  it("API_READY_REQUIRES_VERIFIED_DEPLOYMENT", async () => {
+    const app = await buildApp({ db: fakeDb(), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
+    const response = await app.inject({ method: "GET", url: "/api/v1/ready" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().data.checks.deployment).toBe("unverified");
     await app.close();
   });
   it("API_PAGINATION_BOUNDED", async () => {
@@ -55,6 +120,20 @@ describe("Fastify API boundary", () => {
     const app = await buildApp({ db: fakeDb(), deploymentId: 1, evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false });
     const response = await app.inject({ method: "GET", url: "/api/v1/claims?incidentId=not-an-id" });
     expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+  it("API_CLAIMABLE_CREDIT_IS_READ_FROM_FROZEN_CONTRACT", async () => {
+    const app = await buildApp({
+      db: fakeDb(), deploymentId: 1,
+      contract: { read: async (method: string, args: readonly unknown[]) => method === "get_claimable_balance" && args[0] === "0x1111111111111111111111111111111111111111" ? 42n : 0n } as never,
+      evidencePublicBaseUrl: "https://faultpact.bydx.fun/evidence", probeHttpAllowed: false,
+    });
+    const response = await app.inject({ method: "GET", url: "/api/v1/credits/0x1111111111111111111111111111111111111111" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.claimableCredit).toBe("42");
+    expect(response.json().source).toBe("frozen_contract_view");
+    const invalid = await app.inject({ method: "GET", url: "/api/v1/credits/not-an-address" });
+    expect(invalid.statusCode).toBe(400);
     await app.close();
   });
   it("API_DATABASE_ERRORS_ARE_NOT_EXPOSED_AS_CLIENT_ERRORS", async () => {

@@ -38,6 +38,15 @@ GENLAYER_RPC_URL=https://studio-dev.genlayer.com/api
 GENLAYER_CHAIN_ID=61997
 FAULTPACT_CONTRACT_ADDRESS=0xeb858957e3C426597245f6b59E260f1cC556Bf13
 FAULTPACT_SOURCE_SHA256=4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e
+INDEXER_POLL_INTERVAL_MS=300000
+INDEXER_RECONCILE_INTERVAL_MS=1800000
+INDEXER_RECONCILE_LIMIT=10
+GENLAYER_RPC_MIN_INTERVAL_MS=3000
+GENLAYER_RPC_DAILY_BUDGET=1400
+GENLAYER_RPC_BUDGET_STATE_FILE=/opt/faultpact/.runtime/studio-rpc-scheduler.json
+GENLAYER_RPC_METRICS_INTERVAL_MS=300000
+GENLAYER_RPC_PROBE_INTERVAL_MS=1800000
+PROBE_INTERVAL_MS=30000
 API_HOST=127.0.0.1
 API_PORT=4310
 EVIDENCE_PUBLIC_BASE_URL=https://faultpact.bydx.fun/evidence
@@ -49,6 +58,18 @@ Quote a PostgreSQL URL containing `&` when exporting it in a shell. Systemd
 `EnvironmentFile` loading is used by the deployed units. `REPORTER_PRIVATE_KEY`
 is optional, environment-only, and must never be copied into the database or
 logs.
+
+Create the scheduler directory before starting either service and make it owned
+by the service account:
+
+```bash
+install -d -o faultpact -g faultpact -m 0750 /opt/faultpact/.runtime
+```
+
+The API and worker must use the same absolute state path. The systemd units
+already permit writes below `/opt/faultpact`; the state file is created with
+mode `0600`. Docker Compose mounts the shared `faultpact-rpc-state` volume at
+`/var/lib/faultpact` for both containers.
 
 ## Build and migrate
 
@@ -82,12 +103,13 @@ PostgreSQL ← API and worker
 Worker     → Studio Dev reads, reconciliation, monitoring
 ```
 
-Start or restart only the intended units:
+For an RPC scheduler deployment, restart the API and worker so both load the
+same shared transport code and state path. Do not restart the web service unless
+its own artifact changed:
 
 ```bash
 sudo systemctl restart faultpact-api
 sudo systemctl restart faultpact-worker
-sudo systemctl restart faultpact-web
 sudo systemctl is-active faultpact-api faultpact-worker faultpact-web
 ```
 
@@ -124,7 +146,10 @@ certificate tooling.
 ## Health checks
 
 - `/api/v1/health` checks process, database, and configured contract.
-- `/api/v1/ready` checks database, chain, deployment, and indexer freshness.
+- `/api/v1/ready` returns 503 when the database is unavailable or startup has
+  not verified the frozen deployment. It returns 200 with `degraded: true` when
+  indexed reads remain available but the external RPC or indexer is unhealthy;
+  those states remain visible in `checks.externalRpc` and `checks.indexer`.
 - `/api/v1/status` and worker heartbeat records provide operational detail.
 - `/api/docs/json` exposes the generated API schema.
 

@@ -12,6 +12,8 @@ export type ApiDependencies = {
   db: PrismaClient;
   contract?: FaultPactContractAdapter;
   deploymentId: number;
+  deploymentVerified?: boolean;
+  reconcileMaxAgeMs?: number;
   adminToken?: string;
   evidencePublicBaseUrl: string;
   probeHttpAllowed: boolean;
@@ -30,8 +32,8 @@ function routeFailure(reply: { code: (status: number) => { send: (body: unknown)
   return reply.code(503).send({ error: "Temporarily unavailable" });
 }
 
-function indexerIsFresh(cursor: { status?: string; lastSuccessAt?: Date | null } | null): boolean {
-  return cursor?.status === "HEALTHY" && cursor.lastSuccessAt instanceof Date && Date.now() - cursor.lastSuccessAt.getTime() <= 90_000;
+function cursorIsFresh(cursor: { status?: string; lastSuccessAt?: Date | null } | null, maxAgeMs: number): boolean {
+  return cursor?.status === "HEALTHY" && cursor.lastSuccessAt instanceof Date && Date.now() - cursor.lastSuccessAt.getTime() <= maxAgeMs;
 }
 
 function queryText(value: unknown, field: string): string | undefined {
@@ -75,14 +77,36 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
 
   app.get("/api/v1/ready", async (_request, reply) => {
     const checks: Record<string, string> = {};
-    try { await deps.db.$queryRaw`SELECT 1`; checks.database = "ok"; } catch { checks.database = "error"; }
+    let databaseAvailable = false;
+    try { await deps.db.$queryRaw`SELECT 1`; checks.database = "ok"; databaseAvailable = true; }
+    catch (error) { checks.database = "error"; deps.logger?.warn({ err: error }, "Readiness database check failed"); }
+    checks.deployment = deps.deploymentVerified ? "verified" : "unverified";
     if (deps.contract) {
-      try { checks.chain = (await deps.contract.chainIdFromRpc({ maxAgeMs: 30_000 })) === FROZEN_CHAIN_ID ? "ok" : "wrong_chain"; } catch { checks.chain = "error"; }
-    } else checks.chain = "unverified";
-    const cursor = await deps.db.syncCursor.findUnique({ where: { deploymentId_entityKind: { deploymentId: deps.deploymentId, entityKind: "all" } } });
-    checks.indexer = indexerIsFresh(cursor) ? "ok" : "degraded";
-    const ready = Object.values(checks).every((value) => value === "ok");
-    return reply.code(ready ? 200 : 503).send(responseData({ ready, checks, deployment: { chainId: FROZEN_CHAIN_ID, contractAddress: FROZEN_CONTRACT_ADDRESS, rpc: FROZEN_RPC_URL }, indexedAt: cursor?.lastSuccessAt ?? null }));
+      try {
+        const cooldownUntil = await deps.contract.refreshRpcCooldown();
+        checks.externalRpc = cooldownUntil > Date.now()
+          ? "degraded"
+          : (await deps.contract.chainIdFromRpc({ maxAgeMs: 30 * 60_000, request: { subsystem: "api_health" } })) === FROZEN_CHAIN_ID ? "ok" : "wrong_chain";
+      } catch { checks.externalRpc = "degraded"; }
+    } else checks.externalRpc = "unavailable";
+    let cursor = null;
+    let reconciliationCursor = null;
+    if (databaseAvailable) {
+      try {
+        [cursor, reconciliationCursor] = await Promise.all([
+          deps.db.syncCursor.findUnique({ where: { deploymentId_entityKind: { deploymentId: deps.deploymentId, entityKind: "all" } } }),
+          deps.db.syncCursor.findUnique({ where: { deploymentId_entityKind: { deploymentId: deps.deploymentId, entityKind: "reconciliation" } } }),
+        ]);
+      } catch (error) { deps.logger?.warn({ err: error }, "Readiness indexer check failed"); }
+    }
+    const bootstrapFresh = cursorIsFresh(cursor, 10 * 60_000);
+    const reconciliationFresh = cursorIsFresh(reconciliationCursor, deps.reconcileMaxAgeMs ?? 60 * 60_000);
+    checks.indexer = bootstrapFresh && reconciliationFresh ? "ok" : "degraded";
+    if (cursor?.lastError && /\b429\b|cooldown|rate[\s-]?limit|daily budget/i.test(cursor.lastError)) checks.externalRpc = "degraded";
+    if (reconciliationCursor?.lastError && /\b429\b|cooldown|rate[\s-]?limit|daily budget/i.test(reconciliationCursor.lastError)) checks.externalRpc = "degraded";
+    const ready = databaseAvailable && deps.deploymentVerified === true;
+    const degraded = checks.externalRpc !== "ok" || checks.indexer !== "ok";
+    return reply.code(ready ? 200 : 503).send(responseData({ ready, degraded, checks, deployment: { chainId: FROZEN_CHAIN_ID, contractAddress: FROZEN_CONTRACT_ADDRESS, rpc: FROZEN_RPC_URL }, indexedAt: cursor?.lastSuccessAt ?? null, reconciliationAt: reconciliationCursor?.lastSuccessAt ?? null }));
   });
 
   app.get("/api/v1/status", async (_request, reply) => {
@@ -95,9 +119,18 @@ export async function buildApp(deps: ApiDependencies): Promise<FastifyInstance> 
   });
 
   app.get("/api/v1/network", async () => responseData({ network: "GenLayer Studio Development Preview", chainId: FROZEN_CHAIN_ID, rpc: FROZEN_RPC_URL, contractAddress: FROZEN_CONTRACT_ADDRESS }));
+  app.get("/api/v1/credits/:address", async (request, reply) => {
+    const address = (request.params as Params).address ?? "";
+    if (!/^0x[a-fA-F0-9]{40}$/.test(address)) return reply.code(400).send({ error: "address must be a 20-byte EVM address" });
+    if (!deps.contract) return reply.code(503).send({ error: "Claimable credit is temporarily unavailable" });
+    try {
+      const claimableCredit = await deps.contract.read("get_claimable_balance", [address], { subsystem: "api_read" });
+      return reply.send(responseData({ address: address.toLowerCase(), claimableCredit }, { source: "frozen_contract_view" }));
+    } catch (error) { return routeFailure(reply, error, deps.logger); }
+  });
   app.get("/api/v1/protocol/config", async () => {
     const snapshot = await deps.db.protocolSnapshot.findUnique({ where: { deploymentId: deps.deploymentId } });
-    const config = snapshot?.raw ?? (deps.contract ? await deps.contract.getProtocolConfig() : null);
+    const config = snapshot?.raw ?? (deps.contract ? await deps.contract.getProtocolConfig({ subsystem: "api_read" }) : null);
     return responseData(config, { indexedAt: snapshot?.capturedAt ?? null, source: snapshot ? "indexed_contract_view" : "live_contract_view" });
   });
   app.get("/api/v1/stats", async () => {

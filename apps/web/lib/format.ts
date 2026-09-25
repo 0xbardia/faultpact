@@ -46,6 +46,41 @@ export function parseGen(value: string): bigint | null {
   catch { return null; }
 }
 
+function parsePercent(value: string, unitsPerPercent: bigint, fractionDigits: number): bigint | null {
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return null;
+  const [whole = "0", fraction = ""] = value.split(".");
+  if (fraction.length > fractionDigits) return null;
+  return BigInt(whole) * unitsPerPercent + BigInt((fraction + "0".repeat(fractionDigits)).slice(0, fractionDigits)) * unitsPerPercent / (10n ** BigInt(fractionDigits));
+}
+
+export function parsePpmPercent(value: string): bigint | null { return parsePercent(value, 10_000n, 4); }
+export function parseBpsPercent(value: string): bigint | null { return parsePercent(value, 100n, 2); }
+
+export function parseDurationInput(value: string): bigint | null {
+  const input = value.trim();
+  if (/^\d+$/.test(input)) return BigInt(input);
+  const parts = [...input.matchAll(/(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)/gi)];
+  if (!parts.length || parts.map((part) => part[0]).join(" ").replaceAll(/\s+/g, " ").trim().toLowerCase() !== input.replaceAll(/\s+/g, " ").trim().toLowerCase()) return null;
+  return parts.reduce((total, part) => {
+    const unit = part[2]?.toLowerCase() ?? "s";
+    const multiplier = unit.startsWith("d") ? 86_400n : unit.startsWith("h") ? 3_600n : unit.startsWith("m") ? 60n : 1n;
+    return total + BigInt(part[1] ?? "0") * multiplier;
+  }, 0n);
+}
+
+export function formatDurationInput(value: unknown): string {
+  const seconds = digits(value);
+  if (seconds === null) return "";
+  let rest = seconds;
+  const parts: string[] = [];
+  for (const [unit, size] of [["d", 86_400n], ["h", 3_600n], ["m", 60n], ["s", 1n]] as const) {
+    const count = rest / size;
+    if (count) parts.push(`${count}${unit}`);
+    rest %= size;
+  }
+  return parts.join(" ") || "0s";
+}
+
 export function formatDurationSeconds(value: unknown): string {
   const seconds = digits(value);
   if (seconds === null) return text(value);

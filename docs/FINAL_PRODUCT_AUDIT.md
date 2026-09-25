@@ -4,16 +4,16 @@ Audit date: 2026-09-23. Workspace: `/root/faultpact`. Live product: <https://fau
 
 ## Executive Summary
 
-The public read product is clearer and more reliable after this pass. The landing page explains the bonded Pact lifecycle, users can browse without a wallet, financial values remain exact, and Incident pages distinguish contract provenance from source checks performed by the app. Frontend, unit, browser, contract-regression, database, and live contract-schema checks pass.
+The Phase 4 candidate audit verified the public read product and its previous regression suites. The Phase 4.2 re-audit found the write console still incomplete and could not repeat live schema certification because Studio returned HTTP 429. The current release remains blocked; prior candidate results below are historical and are not a substitute for the outstanding Phase 4.2 gates.
 
-V1 publication is blocked. The web console does not expose Provider registration, Service creation, Pact drafting/publication, Provider capital transactions, Claim filing, or claimable-credit withdrawal. A live wallet write was unavailable in the browser. The worker is preserving indexed rows, but Studio HTTP 429 responses leave the indexer cursor degraded and `/api/v1/ready` returns 503. No tag or GitHub Release was created.
+V1 publication is blocked. The web console does not expose Provider registration, Service creation, Pact drafting/publication, Provider capital transactions, Claim filing, or claimable-credit withdrawal. A real browser-wallet write has not been completed. Studio HTTP 429 responses leave the indexer cursor degraded; `/api/v1/ready` now correctly returns 200 with a visible degraded status while the database and indexed-read API are available. No tag or GitHub Release was created.
 
 ## Contract Integrity
 
 - Contract: `0xeb858957e3C426597245f6b59E260f1cC556Bf13`; GenLayer Studio Development Preview, chain `61997`.
 - `contracts/FaultPact.py` SHA-256 at start and after implementation: `4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e`.
 - Contract modified: **NO**. Contract redeployed: **NO**.
-- Live source, schema snapshot, chain, and method-count integration check passed during the final integration run.
+- The candidate certification previously recorded matching live source/schema/chain and 78/23/55/4 methods. The Phase 4.2 live schema recheck returned HTTP 429; current live schema status is unavailable, not mismatched.
 
 ## Real User UX Audit
 
@@ -76,7 +76,7 @@ No generic gradient hero, purple/cyan AI treatment, icon-in-circle repetition, d
 ## Backend Audit
 
 - API routes use bounded pagination and validated filters. The Incident Claim filter accepts decimal IDs, returns 400 for invalid input, and is covered by API/DB tests. Database errors are sanitized for clients.
-- `/api/v1/health` returns 200. `/api/v1/ready` returns 503 while the indexer cursor is stale or degraded; chain and database checks were healthy during the final check.
+- `/api/v1/health` and `/api/v1/ready` return 200. Readiness reports `ready: true`, `degraded: true`, `externalRpc: degraded`, and `indexer: degraded`; the database is healthy and the chain-id probe responds, while worker calls remain quota-limited.
 - Shared RPC transport serializes reads, deduplicates identical in-flight requests, honors `Retry-After`, applies bounded cooldown/backoff and jitter, and avoids browser schema discovery.
 - Monitoring keeps operational probe state separate from contract facts; monitoring unit tests pass. SSRF and response-boundary controls remain covered by existing monitoring tests and security documentation.
 - Observability logs include service, region, operation/entity, and error context without printing keys. The worker currently records Studio 429s and retains indexed records.
@@ -91,7 +91,7 @@ No generic gradient hero, purple/cyan AI treatment, icon-in-circle repetition, d
 
 - Upserts remain idempotent. Temporary RPC errors do not delete previously indexed entities.
 - Partial scans mark the overall cursor degraded. A 429 stops the entity scan; claim reconciliation also stops at the first shared cooldown instead of querying every Claim. Regression tests cover partial failures, retained rows, cooldown stop behavior, and evidence status.
-- The live cursor remains `DEGRADED` because Studio returned repeated 429 responses during worker sync. Readiness stays 503 until a successful full sync is fresh.
+- The live cursor remains `DEGRADED` because Studio returned repeated 429 responses during worker sync. Readiness keeps this visible without marking indexed reads unavailable.
 
 ## Monitoring Audit
 
@@ -170,3 +170,27 @@ Next production build reports 102KB shared first-load JavaScript and 121KB first
 ## Final Verdict
 
 **FAULTPACT V1 FINAL PRODUCT PARTIAL — RELEASE BLOCKED**
+
+## Phase 4.2 Re-audit Update — 2026-09-23
+
+This section supersedes the candidate-time readiness, integration, and live
+schema statements above where they differ.
+
+- PostgreSQL was recovered after a full-filesystem incident. The public API and
+  indexed list/status endpoints return HTTP 200 again.
+- `/api/v1/ready` now reports `ready: true`, `degraded: true` while the indexer
+  cursor is stale. Database loss and an unverified deployment still return 503.
+- Studio still returns HTTP 429 to live contract-schema certification. The
+  local frozen schema remains available; live schema verification is
+  **unavailable**, not a mismatch.
+- Deterministic tests now pass: unit 78/78 and integration 1/1. Lint,
+  typecheck, Prisma schema validation, and test-database migration status pass.
+- Production build, lint, and typecheck pass. A full post-fix Playwright sweep
+  has not been run; live CLI smoke checks of the homepage and Explorer showed no
+  browser console errors. A real wallet write and payable wallet write have not
+  been proven.
+- Provider write UI, Claim filing, and credit withdrawal remain unavailable;
+  no release tag or GitHub Release was created.
+
+See [Phase 4.2 blocker closure](PHASE_4_2_RELEASE_BLOCKER_CLOSURE.md) for the
+symptom/root cause/fix/verification record and current gate state.

@@ -40,6 +40,12 @@ describe("monitoring and evidence", () => {
     const result = await probeRpc({ probeId: "success", url: server.url, expectedChainId: 61997, allowHttp: true, allowPrivateNetworks: true, allowedPorts: [server.port] });
     expect(result.success).toBe(true);
   });
+  it("PROBE_USES_SHARED_RPC_CALLBACK_WHEN_PROVIDED", async () => {
+    const calls: string[] = [];
+    const result = await probeRpc({ probeId: "shared", url: "https://studio-dev.genlayer.com/api", expectedChainId: 61997, rpcCall: async (method) => { calls.push(method); return healthy(method); } });
+    expect(result.success).toBe(true);
+    expect(calls).toEqual(["eth_chainId", "eth_blockNumber", "eth_getBlockByNumber"]);
+  });
   it("PROBE_TIMEOUT", async () => {
     const server = await rpcServer(() => ({ waitMs: 50 }));
     const result = await probeRpc({ probeId: "timeout", url: server.url, expectedChainId: 61997, timeoutMs: 5, allowHttp: true, allowPrivateNetworks: true, allowedPorts: [server.port] });

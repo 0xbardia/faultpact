@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { connectWallet, FAULTPACT_CHAIN_ID, provider, switchToFaultPact, walletAccounts, walletChainId } from "../lib/wallet";
+import { connectWallet, FAULTPACT_CHAIN_ID, provider, switchToFaultPact, walletAccounts, walletChainId, walletErrorDetails, walletErrorMessage } from "../lib/wallet";
 import { formatAddress } from "../lib/format";
 
 export function SiteHeader() {
@@ -30,6 +30,7 @@ export function WalletButton() {
   const [address, setAddress] = useState<string>();
   const [chain, setChain] = useState<number | null>(null);
   const [error, setError] = useState<string>();
+  const [technical, setTechnical] = useState<string>();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -45,20 +46,19 @@ export function WalletButton() {
   }, []);
 
   async function handleClick() {
-    setError(undefined); setBusy(true);
+    setError(undefined); setTechnical(undefined); setBusy(true);
     try {
       if (!address) { const result = await connectWallet(); setAddress(result.address); setChain(result.chainId); }
       else if (chain !== FAULTPACT_CHAIN_ID) { await switchToFaultPact(); setChain(await walletChainId()); }
       else setAddress(undefined);
-    } catch (reason: unknown) { setError(reason instanceof Error ? reason.message : "Wallet action failed"); }
+    } catch (reason: unknown) { setError(walletErrorMessage(reason)); setTechnical(walletErrorDetails(reason)); }
     finally { setBusy(false); }
   }
 
   const label = busy ? "Connecting…" : !address ? "Connect wallet" : chain !== FAULTPACT_CHAIN_ID ? "Switch to Studio Dev" : formatAddress(address);
-  return <div className="wallet-wrap"><button className={`wallet-button ${chain !== null && chain !== FAULTPACT_CHAIN_ID ? "wallet-wrong" : ""}`} onClick={() => void handleClick()} aria-label={label}>{label}</button>{error ? <span className="wallet-error" role="alert">{error}</span> : null}</div>;
+  return <div className="wallet-wrap"><button className={`wallet-button ${chain !== null && chain !== FAULTPACT_CHAIN_ID ? "wallet-wrong" : ""}`} onClick={() => void handleClick()} aria-label={label}>{label}</button>{error ? <span className="wallet-error" role="alert">{error}<details><summary>Technical details</summary><code>{technical}</code></details></span> : null}</div>;
 }
 
 export function SiteFooter() {
   return <footer className="site-footer"><div className="footer-grid"><div><Link className="brand footer-brand" href="/"><span className="brand-mark">F</span><span>FAULT<span className="brand-slash">/</span>PACT</span></Link><p>Reliability with consequences.</p></div><div><p className="footer-label">Product</p><Link href="/explore">Explore</Link><Link href="/monitoring">Monitoring</Link><Link href="/app">Customer app</Link><Link href="/provider">Provider console</Link></div><div><p className="footer-label">Learn</p><Link href="/docs">Documentation</Link><Link href="/docs/evidence">Evidence model</Link><Link href="/docs/contract">Contract</Link><Link href="/docs/network">Network</Link></div><div><p className="footer-label">Protocol</p><a href="https://github.com/0xbardia/faultpact" target="_blank" rel="noreferrer">GitHub ↗</a><Link href="/status">Status</Link><span className="mono footer-contract">61997 / 0xeb85…6Bf13</span></div></div><div className="footer-bottom"><span>© {new Date().getFullYear()} FaultPact</span><span>GenLayer Studio Development Preview · Chain 61997</span></div></footer>;
 }
-

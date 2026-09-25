@@ -26,6 +26,14 @@ export async function apiGet<T>(path: string, params?: Record<string, string | n
   return body as ApiEnvelope<T>;
 }
 
+export async function waitForIndexed<T>(read: () => Promise<T>, matches: (value: T) => boolean): Promise<T> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try { const value = await read(); if (matches(value)) return value; } catch { /* Indexer/API may still be catching up. */ }
+    if (attempt < 39) await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error("The transaction finalized, but the indexed API has not caught up yet.");
+}
+
 export function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
