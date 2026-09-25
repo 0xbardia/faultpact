@@ -453,12 +453,21 @@ model EvidenceSubmissionAttempt {
   status         String
   attemptNo      Int
   error          String?
+  method         String?
+  artifactUrl    String?
+  artifactSha256 String?
+  evidenceId     Decimal?   @db.Decimal(78, 0)
+  txState        String?
+  finalizedAt    DateTime?
+  failureCategory String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   target         MonitorTarget? @relation(fields: [targetId], references: [id], onDelete: SetNull)
   artifact       EvidenceArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
   @@unique([artifactId, attemptNo])
   @@index([incidentId, status])
+  @@index([incidentId, artifactSha256])
+  @@index([txHash])
 }
 
 model WorkerHeartbeat {

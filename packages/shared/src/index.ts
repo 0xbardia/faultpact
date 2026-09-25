@@ -8,6 +8,28 @@ export const FROZEN_RPC_URL = "https://studio-dev.genlayer.com/api";
 export const FROZEN_CONTRACT_ADDRESS = "0xeb858957e3C426597245f6b59E260f1cC556Bf13";
 export const FROZEN_SOURCE_SHA256 = "4913a2af9cac39aac211f8f9fa66e1de8791986db495585c7a1ee9f757e7bb2e";
 
+/** Evidence types accepted by the frozen contract's submit_evidence. */
+export const EVIDENCE_TYPES = ["PROBE_REPORT", "CUSTOMER_LOG", "PROVIDER_LOG", "STATUS_PAGE", "CHAIN_REFERENCE", "THIRD_PARTY_MONITOR", "POSTMORTEM", "OTHER", "PROVIDER_STATEMENT"] as const;
+/** Evidence types the frozen contract upgrades to AUTHORITATIVE provenance for an authorized reporter. */
+export const AUTHORITATIVE_EVIDENCE_TYPES = ["PROBE_REPORT", "THIRD_PARTY_MONITOR", "CHAIN_REFERENCE"] as const;
+export type EvidenceType = (typeof EVIDENCE_TYPES)[number];
+
+export function isFrozenRpcUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && url.hostname === "studio-dev.genlayer.com"
+      && (url.port === "" || url.port === "443")
+      && url.username === ""
+      && url.password === ""
+      && url.pathname.replace(/\/+$/, "") === "/api"
+      && url.search === ""
+      && url.hash === "";
+  } catch {
+    return false;
+  }
+}
+
 const optionalEnv = (schema: z.ZodType<string>) =>
   z.preprocess((value) => (typeof value === "string" && value.trim() === "" ? undefined : value), schema.optional());
 
@@ -23,8 +45,14 @@ export const envSchema = z.object({
   FAULTPACT_SOURCE_SHA256: z.string().regex(HASH256_RE),
   API_HOST: z.string().default("127.0.0.1"),
   API_PORT: intEnv(4310),
-  INDEXER_POLL_INTERVAL_MS: intEnv(30000),
-  INDEXER_RECONCILE_INTERVAL_MS: intEnv(60000),
+  INDEXER_POLL_INTERVAL_MS: intEnv(300000),
+  INDEXER_RECONCILE_INTERVAL_MS: intEnv(1800000),
+  INDEXER_RECONCILE_LIMIT: intEnv(10),
+  GENLAYER_RPC_MIN_INTERVAL_MS: intEnv(3000),
+  GENLAYER_RPC_DAILY_BUDGET: intEnv(1400),
+  GENLAYER_RPC_BUDGET_STATE_FILE: optionalEnv(z.string().min(1)),
+  GENLAYER_RPC_METRICS_INTERVAL_MS: intEnv(300000),
+  GENLAYER_RPC_PROBE_INTERVAL_MS: intEnv(1800000),
   PROBE_REGION: z.string().trim().min(1).max(64).default("frankfurt"),
   PROBE_INTERVAL_MS: intEnv(30000),
   PROBE_TIMEOUT_MS: intEnv(5000),
@@ -36,6 +64,12 @@ export const envSchema = z.object({
   EVIDENCE_MAX_BYTES: intEnv(65536),
   ADMIN_API_TOKEN: optionalEnv(z.string().min(16)),
   REPORTER_PRIVATE_KEY: optionalEnv(z.string().regex(/^0x[a-fA-F0-9]{64}$/)),
+  // Optional key-rotation guard: when set, the signer must derive exactly this public address.
+  REPORTER_EXPECTED_ADDRESS: optionalEnv(z.string().regex(ADDRESS_RE)),
+  // Explicit OPEN incident used by the signer-backed evidence command and the live integration test.
+  FAULTPACT_LIVE_TEST_INCIDENT_ID: optionalEnv(z.string().regex(/^\d+$/)),
+  REPORTER_SUBMIT_EVIDENCE_TYPE: z.enum(EVIDENCE_TYPES).default("THIRD_PARTY_MONITOR"),
+  REPORTER_MAX_FINALIZATION_WAIT_MS: intEnv(240000),
   AUTO_ONCHAIN_SUBMISSION: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
   MONITOR_MODE: z.enum(["observe", "evidence", "auto"]).default("observe"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
@@ -137,10 +171,15 @@ export function parsePage(value: unknown, defaultSize = 25, maxSize = 100): { cu
 
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
+    const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason ?? new Error("aborted"));
-    }, { once: true });
+      reject(signal?.reason ?? new Error("aborted"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    if (signal?.aborted) { clearTimeout(timer); reject(signal.reason ?? new Error("aborted")); return; }
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

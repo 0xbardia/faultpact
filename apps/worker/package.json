@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "evidence:submit": "tsx src/reporter-cli.ts"
   },
   "dependencies": {
     "@faultpact/contract": "workspace:*",

@@ -32,3 +32,35 @@ Raw samples are retained for `PROBE_RAW_RETENTION_SECONDS` (default seven days)
 and pruned by the monitor worker by region. Aggregates, onchain records, and
 evidence artifacts are retained longer; immutable artifact bytes are not
 automatically deleted.
+
+## Reporter mode
+
+The worker resolves its reporter identity at startup:
+
+* **MONITOR-ONLY** — `REPORTER_PRIVATE_KEY` is absent. The worker probes,
+  aggregates, and stores immutable artifacts, and reports
+  `REPORTER SUBMISSION DISABLED`. No transaction can be signed.
+* **AUTHORIZED REPORTER SUBMISSION** — a key is configured, it derives the
+  expected public address, and the frozen contract reports that address as an
+  authorized reporter through `is_authorized_reporter`. The worker refuses to
+  sign for any other chain, RPC endpoint, contract address, or source digest.
+
+A configured key is not authorization. When a key exists but the contract does
+not authorize the derived address, the worker reports `REPORTER_NOT_AUTHORIZED`
+and submits nothing.
+
+The signer path itself is not part of the periodic monitor loop. Evidence
+submission is an explicit operation:
+
+```bash
+pnpm evidence:submit --incident-id <open-incident-id> --dry-run
+pnpm evidence:submit --incident-id <open-incident-id>
+```
+
+`--dry-run` verifies the chain, the frozen deployment, the reporter
+authorization, the incident window, the canonical artifact, the public artifact
+bytes and the submission plan without signing anything. Without `--dry-run` the
+command runs `attach_incident_report` and `submit_evidence`, waits for both
+transactions to finalize, and verifies the resulting evidence from contract
+state. See the [evidence pipeline](EVIDENCE_PIPELINE.md) for the argument
+contract and the [operations guide](OPERATIONS.md) for reporter setup.

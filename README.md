@@ -59,6 +59,29 @@ Regional workers probe configured RPC targets and aggregate bounded monitoring w
 
 Locally stored monitoring artifacts are served as immutable exact bytes at `/evidence/<sha256>`. Onchain evidence may instead reference an external source URI; the index does not fetch that URI, so its bytes and submitted hash are shown as unchecked. SHA-256 verifies byte identity only when the bytes are actually checked; it does not prove the measurement is true or who produced it.
 
+## Signer-backed Evidence Worker
+
+A dedicated reporter wallet can take one canonical immutable artifact through the frozen contract with `attach_incident_report` and `submit_evidence`, wait for both transactions to finalize, and verify the resulting evidence from contract state. The reporter private key is optional: without it the worker stays MONITOR-ONLY and only produces artifacts.
+
+```bash
+pnpm evidence:submit --incident-id <open-incident-id> --dry-run   # verify preconditions, sign nothing
+pnpm evidence:submit --incident-id <open-incident-id>             # submit and verify from contract state
+pnpm test:reporter-live                                           # live Studio Dev certification
+```
+
+| Item | Location |
+| --- | --- |
+| Worker implementation | [`apps/worker/src/reporter-submit.ts`](apps/worker/src/reporter-submit.ts) · [`reporter-runtime.ts`](apps/worker/src/reporter-runtime.ts) · [`reporter-cli.ts`](apps/worker/src/reporter-cli.ts) |
+| Signer and transaction lifecycle | [`packages/contract/src/reporter.ts`](packages/contract/src/reporter.ts) · [`transactions.ts`](packages/contract/src/transactions.ts) |
+| Evidence argument and read-back rules | [`packages/monitoring/src/reporter.ts`](packages/monitoring/src/reporter.ts) |
+| Live integration test | [`tests/certification/reporter-live.test.ts`](tests/certification/reporter-live.test.ts) |
+| Deterministic integration test | [`apps/worker/src/reporter-submit.test.ts`](apps/worker/src/reporter-submit.test.ts) |
+| Evidence pipeline documentation | [`docs/EVIDENCE_PIPELINE.md`](docs/EVIDENCE_PIPELINE.md) |
+| Authorized reporter setup | [`docs/OPERATIONS.md`](docs/OPERATIONS.md#authorized-reporter-setup) |
+| Phase 4.4 certification report | [`docs/PHASE_4_4_SIGNER_EVIDENCE_CERTIFICATION.md`](docs/PHASE_4_4_SIGNER_EVIDENCE_CERTIFICATION.md) |
+
+The worker fails closed: it signs only for chain `61997`, the frozen contract address, and the frozen source digest; it re-checks the contract's `is_authorized_reporter` before every submission; it hashes the exact public artifact bytes and refuses any mismatch; it treats an undecided transaction as `NOT VERIFIED` rather than success; and it reconciles interrupted attempts instead of duplicating evidence.
+
 ## Security model
 
 - The frozen contract determines financial state and settlement.
@@ -109,6 +132,7 @@ The repository contains Vitest unit tests, PostgreSQL and live-contract integrat
 - [Phase 1–2 certification](docs/PHASE_1_2_CERTIFICATION.md)
 - [Phase 3 certification](docs/PHASE_3_CERTIFICATION.md)
 - [Phase 4 certification](docs/PHASE_4_FINAL_SYSTEM_CERTIFICATION.md)
+- [Phase 4.4 signer evidence certification](docs/PHASE_4_4_SIGNER_EVIDENCE_CERTIFICATION.md)
 
 ## Known limitations
 

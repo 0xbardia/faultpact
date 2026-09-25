@@ -218,23 +218,26 @@ export async function probeRpc(input: {
   allowPrivateNetworks?: boolean;
   allowedPorts?: readonly number[];
   staleHead?: { previousTarget?: bigint; previousReference?: bigint; minimumReferenceAdvance?: bigint };
+  rpcCall?: (method: string, params?: readonly unknown[]) => Promise<unknown>;
+  referenceRpcCall?: (method: string, params?: readonly unknown[]) => Promise<unknown>;
 }): Promise<RpcProbeResult> {
   const started = process.hrtime.bigint();
   const observedAt = new Date();
   try {
-    const client = new JsonRpcClient(input.url, { ...(input.allowHttp === undefined ? {} : { allowHttp: input.allowHttp }), ...(input.allowPrivateNetworks === undefined ? {} : { allowPrivateNetworks: input.allowPrivateNetworks }), ...(input.allowedPorts === undefined ? {} : { allowedPorts: input.allowedPorts }), ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }), ...(input.maxResponseBytes === undefined ? {} : { maxResponseBytes: input.maxResponseBytes }) });
-    const chainRaw = await client.call("eth_chainId");
+    const client = input.rpcCall ?? new JsonRpcClient(input.url, { ...(input.allowHttp === undefined ? {} : { allowHttp: input.allowHttp }), ...(input.allowPrivateNetworks === undefined ? {} : { allowPrivateNetworks: input.allowPrivateNetworks }), ...(input.allowedPorts === undefined ? {} : { allowedPorts: input.allowedPorts }), ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }), ...(input.maxResponseBytes === undefined ? {} : { maxResponseBytes: input.maxResponseBytes }) });
+    const call = typeof client === "function" ? client : (method: string, params: readonly unknown[] = []) => client.call(method, params);
+    const chainRaw = await call("eth_chainId");
     const observedChainId = Number(hexNumber(chainRaw, "chainId"));
-    const targetBlock = hexNumber(await client.call("eth_blockNumber"), "blockNumber");
-    const block = await client.call("eth_getBlockByNumber", ["latest", false]);
+    const targetBlock = hexNumber(await call("eth_blockNumber"), "blockNumber");
+    const block = await call("eth_getBlockByNumber", ["latest", false]);
     if (!block || typeof block !== "object" || Array.isArray(block)) throw new RpcProbeError("INVALID_BLOCK", "latest block is not an object");
     const blockRecord = block as Record<string, unknown>;
     hexNumber(blockRecord.number, "block.number");
     hexNumber(blockRecord.timestamp, "block.timestamp");
     let referenceBlock: bigint | undefined;
     if (input.referenceUrl) {
-      const reference = new JsonRpcClient(input.referenceUrl, { ...(input.allowHttp === undefined ? {} : { allowHttp: input.allowHttp }), ...(input.allowPrivateNetworks === undefined ? {} : { allowPrivateNetworks: input.allowPrivateNetworks }), ...(input.allowedPorts === undefined ? {} : { allowedPorts: input.allowedPorts }), ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }), ...(input.maxResponseBytes === undefined ? {} : { maxResponseBytes: input.maxResponseBytes }) });
-      referenceBlock = hexNumber(await reference.call("eth_blockNumber"), "referenceBlock");
+      const reference = input.referenceRpcCall ?? new JsonRpcClient(input.referenceUrl, { ...(input.allowHttp === undefined ? {} : { allowHttp: input.allowHttp }), ...(input.allowPrivateNetworks === undefined ? {} : { allowPrivateNetworks: input.allowPrivateNetworks }), ...(input.allowedPorts === undefined ? {} : { allowedPorts: input.allowedPorts }), ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }), ...(input.maxResponseBytes === undefined ? {} : { maxResponseBytes: input.maxResponseBytes }) });
+      referenceBlock = hexNumber(await (typeof reference === "function" ? reference("eth_blockNumber") : reference.call("eth_blockNumber")), "referenceBlock");
     }
     const blockLagKnown = referenceBlock !== undefined;
     const blockLag = blockLagKnown && referenceBlock !== undefined ? (referenceBlock > targetBlock ? referenceBlock - targetBlock : 0n) : undefined;
@@ -243,8 +246,9 @@ export async function probeRpc(input: {
     return { probeId: input.probeId, observedAt, success: observedChainId === input.expectedChainId, latencyMs, expectedChainId: input.expectedChainId, observedChainId, targetBlock, referenceBlock, blockLag, blockLagKnown, stale, ...(observedChainId === input.expectedChainId ? {} : { errorCode: "WRONG_CHAIN", errorMessage: `expected ${input.expectedChainId}, got ${observedChainId}` }), raw: { chainId: observedChainId, targetBlock: targetBlock.toString(), referenceBlock: referenceBlock?.toString() ?? null } };
   } catch (error) {
     const latencyMs = Number(process.hrtime.bigint() - started) / 1_000_000;
-    const code = error instanceof RpcProbeError ? error.code : error instanceof SsrfError ? "SSRF_REJECTED" : "PROBE_ERROR";
-    return { probeId: input.probeId, observedAt, success: false, latencyMs, expectedChainId: input.expectedChainId, blockLagKnown: false, stale: false, errorCode: code, errorMessage: error instanceof Error ? error.message : "probe failed" };
+    const message = error instanceof Error ? error.message : String(error);
+    const code = error instanceof RpcProbeError ? error.code : error instanceof SsrfError ? "SSRF_REJECTED" : /\b429\b|cooldown|rate limit|daily budget/i.test(message) ? "HTTP_429" : "PROBE_ERROR";
+    return { probeId: input.probeId, observedAt, success: false, latencyMs, expectedChainId: input.expectedChainId, blockLagKnown: false, stale: false, errorCode: code, errorMessage: message };
   }
 }
 
@@ -368,4 +372,5 @@ export async function reporterPreflight(input: { reporterAddress?: string; hasPr
 }
 
 export * from "./artifacts.js";
+export * from "./reporter.js";
 export * from "./submission.js";
