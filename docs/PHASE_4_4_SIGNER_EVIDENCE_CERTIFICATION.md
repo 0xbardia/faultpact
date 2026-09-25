@@ -444,8 +444,14 @@ curl -fsS https://faultpact.bydx.fun/api/v1/incidents/<id>/evidence
 
 https://github.com/0xbardia/faultpact
 
-Implementation commit: see `git log -1 --stat` on `main` for the commit that adds
-`apps/worker/src/reporter-submit.ts`, `apps/worker/src/reporter-cli.ts`,
-`packages/contract/src/reporter.ts` and
-`tests/certification/reporter-live.test.ts`. This report is committed immediately
-after it.
+Implementation commit: `c19891d` — `feat(worker): signer-backed evidence
+submission through the frozen contract`.
+
+It adds `apps/worker/src/reporter-submit.ts`,
+`apps/worker/src/reporter-cli.ts`, `apps/worker/src/reporter-runtime.ts`,
+`packages/contract/src/reporter.ts`, `packages/monitoring/src/reporter.ts` and
+`tests/certification/reporter-live.test.ts`, and updates
+`docs/EVIDENCE_PIPELINE.md`, `docs/MONITORING.md`, `docs/OPERATIONS.md`,
+`README.md` and `.env.example`. The commit immediately before it (`59a978b`)
+publishes the earlier uncommitted indexer, monitoring, API and web work so the
+repository is reviewable on its own.
