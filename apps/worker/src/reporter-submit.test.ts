@@ -561,6 +561,31 @@ describe("signer-backed evidence worker (deterministic integration)", () => {
     expect(h.node.writes.filter((write) => write.method === "submit_evidence")).toHaveLength(0);
   }, 30_000);
 
+  it("PARALLEL_STRATEGY_SIGNS_BOTH_WRITES_BEFORE_WAITING", async () => {
+    const h = harness();
+    const order: string[] = [];
+    const originalWrite = h.node.write.bind(h.node);
+    h.node.write = (method, args, from, value) => {
+      order.push(`send:${method}`);
+      return originalWrite(method, args, from, value);
+    };
+    h.deps.tracker = {
+      waitForFinalization: async (hash) => {
+        order.push(`wait:${h.node.transactions.find((tx) => tx.hash === hash)?.method ?? hash}`);
+        h.node.finalizeNow(h.node.transactions.find((tx) => tx.hash === hash)!);
+        return { hash, finalization: "FINALIZED" as const, state: "FINALIZED" as const, polls: 1, elapsedMs: 1 };
+      },
+    };
+    const result = await runReporterEvidenceSubmission({ ...h.deps, options: { ...h.deps.options, evidenceSubmissionStrategy: "parallel" }, runtime: { ...h.deps.runtime, verifyContractSource: false } });
+    expect(result.status).toBe("PASS");
+    expect(result.readBackPassed).toBe(true);
+    // Both writes are signed before either finalization is awaited.
+    expect(order).toEqual(["send:attach_incident_report", "send:submit_evidence", "wait:attach_incident_report", "wait:submit_evidence"]);
+    expect(result.steps.every((step) => step.finalization === "FINALIZED")).toBe(true);
+    expect(new Set(result.steps.map((step) => step.evidenceId)).size).toBe(2);
+    expect(h.node.evidence.size).toBe(2);
+  }, 20_000);
+
   it("DRY_RUN_PLANS_WITHOUT_SIGNING", async () => {
     const h = harness();
     const result = await runReporterEvidenceSubmission({ ...h.deps, options: { ...h.deps.options, dryRun: true }, runtime: { ...h.deps.runtime, verifyContractSource: false } });

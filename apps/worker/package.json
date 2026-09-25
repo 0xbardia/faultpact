@@ -12,6 +12,7 @@
     "@faultpact/db": "workspace:*",
     "@faultpact/monitoring": "workspace:*",
     "@faultpact/shared": "workspace:*",
+    "genlayer-js": "2.0.0-rc.1",
     "pino": "^9.10.0"
   }
 }

@@ -79,8 +79,17 @@ pnpm test:reporter-live                                           # live Studio 
 | Evidence pipeline documentation | [`docs/EVIDENCE_PIPELINE.md`](docs/EVIDENCE_PIPELINE.md) |
 | Authorized reporter setup | [`docs/OPERATIONS.md`](docs/OPERATIONS.md#authorized-reporter-setup) |
 | Phase 4.4 certification report | [`docs/PHASE_4_4_SIGNER_EVIDENCE_CERTIFICATION.md`](docs/PHASE_4_4_SIGNER_EVIDENCE_CERTIFICATION.md) |
+| Phase 4.4.1 live proof closure | [`docs/PHASE_4_4_1_LIVE_PROOF_CLOSURE.md`](docs/PHASE_4_4_1_LIVE_PROOF_CLOSURE.md) |
 
 The worker fails closed: it signs only for chain `61997`, the frozen contract address, and the frozen source digest; it re-checks the contract's `is_authorized_reporter` before every submission; it hashes the exact public artifact bytes and refuses any mismatch; it treats an undecided transaction as `NOT VERIFIED` rather than success; and it reconciles interrupted attempts instead of duplicating evidence.
+
+**Live proof (Phase 4.4.1).** An authorized reporter
+(`0x99FF79513004dB21546a0c1b419f48ae30760580`) submitted one canonical artifact
+to incident `9` through both `attach_incident_report` and `submit_evidence`.
+Both transactions finalized and the resulting evidence records `16` and `17` were
+read back from contract state with a matching URI, SHA-256, submitter and
+`AUTHORITATIVE` provenance. The indexer, API and frontend show both records.
+See [the closure report](docs/PHASE_4_4_1_LIVE_PROOF_CLOSURE.md).
 
 ## Security model
 
@@ -133,6 +142,7 @@ The repository contains Vitest unit tests, PostgreSQL and live-contract integrat
 - [Phase 3 certification](docs/PHASE_3_CERTIFICATION.md)
 - [Phase 4 certification](docs/PHASE_4_FINAL_SYSTEM_CERTIFICATION.md)
 - [Phase 4.4 signer evidence certification](docs/PHASE_4_4_SIGNER_EVIDENCE_CERTIFICATION.md)
+- [Phase 4.4.1 live proof closure](docs/PHASE_4_4_1_LIVE_PROOF_CLOSURE.md)
 
 ## Known limitations
 

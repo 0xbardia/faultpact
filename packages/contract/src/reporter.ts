@@ -103,14 +103,24 @@ export async function createReporterWriter(options: ReporterWriterOptions): Prom
     address: account.address,
     async send(request) {
       if (!client) throw new Error("Reporter writer is closed");
+      const write = {
+        address: options.contractAddress as `0x${string}`,
+        functionName: request.method,
+        args: [...request.args] as CalldataEncodable[],
+        value: request.value ?? 0n,
+      };
       let txHash: unknown;
       try {
-        txHash = await client.writeContract({
-          address: options.contractAddress as `0x${string}`,
-          functionName: request.method,
-          args: [...request.args] as CalldataEncodable[],
-          value: request.value ?? 0n,
-        });
+        // GenLayer Studio rejects a write whose fee value is zero, so the fee
+        // distribution and fee value come from the node's current fee policy
+        // rather than being guessed locally. The SDK's write-specific estimator
+        // calls sim_estimateTransactionFees, which the current Studio node
+        // rejects, so the policy-derived estimate is used.
+        const fees = await client.estimateTransactionFees();
+        if (fees.feeValue === undefined || BigInt(fees.feeValue) <= 0n) {
+          throw new Error(`the Studio node reported a zero fee value for ${request.method}`);
+        }
+        txHash = await client.writeContract({ ...write, fees: { feeValue: fees.feeValue, distribution: fees.distribution } });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(redact(`Reporter write ${request.method} failed: ${message}`, privateKey));

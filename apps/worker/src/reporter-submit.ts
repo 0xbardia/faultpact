@@ -6,6 +6,7 @@ import {
   buildAttachIncidentReportArgs,
   buildSubmitEvidenceArgs,
   checkReporterEvidenceCapacity,
+  isAuthoritativeType,
   parseEvidenceRecord,
   planEvidenceSubmissions,
   storedEvidenceTypeFor,
@@ -125,6 +126,13 @@ export type ReporterRunOptions = {
   description: string;
   submitEvidenceType: EvidenceType;
   dryRun?: boolean;
+  /**
+   * `sequential` signs, waits and verifies one record at a time.
+   * `parallel` signs both records back to back and then waits and verifies
+   * each of them. Deployments with a short evidence window cannot fit two
+   * serialized finalization waits inside the window.
+   */
+  evidenceSubmissionStrategy?: "sequential" | "parallel";
 };
 
 export type ReporterRunDeps = {
@@ -292,27 +300,12 @@ export async function runReporterEvidenceSubmission(deps: ReporterRunDeps): Prom
   }
   log("submission plan resolved", { submit: plan.submit, alreadyOnchain: plan.alreadyOnchain, reconcile: plan.reconcile });
 
+  const strategy = options.evidenceSubmissionStrategy ?? "sequential";
+  const alreadyOnchain = await resolveAlreadyOnchainSteps(deps, { plan, argsFor: (method) => (method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs), reporter, artifactUrl, artifactSha256: artifact.sha256, failures, steps });
   if (options.dryRun) {
     for (const step of plan.steps) {
-      const args = step.method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs;
-      let readBack: ReadBackVerification | undefined;
-      if (step.alreadyOnchain) {
-        try {
-          readBack = verifyEvidenceReadBack(step.alreadyOnchain.record, { incidentId: options.incidentId, artifactUrl, sha256: artifact.sha256, reporterAddress: reporter, evidenceType: step.evidenceType, expectReporterAuthorized: true });
-        }
-        catch (error) {
-          failures.push(failureOf(error, step.method));
-        }
-      }
-      steps.push({
-        method: step.method,
-        evidenceType: step.evidenceType,
-        status: step.alreadyOnchain ? "ALREADY_ONCHAIN" : "PLANNED",
-        args,
-        sender: step.alreadyOnchain?.record.submitter ?? reporter,
-        finalization: "N/A",
-        ...(step.alreadyOnchain ? { evidenceId: step.alreadyOnchain.evidenceId, ...(readBack ? { readBack } : {}) } : {}),
-      });
+      if (alreadyOnchain.has(step.method)) continue;
+      steps.push({ method: step.method, evidenceType: step.evidenceType, status: "PLANNED", args: step.method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs, sender: reporter, finalization: "N/A" });
     }
     result.evidenceIds = (await deps.chain.incidentEvidenceIds(options.incidentId)).map((id) => id.toString());
     result.readBackPassed = failures.length === 0 && steps.filter((step) => step.status === "ALREADY_ONCHAIN").every((step) => step.readBack?.passed === true);
@@ -320,33 +313,47 @@ export async function runReporterEvidenceSubmission(deps: ReporterRunDeps): Prom
     return result;
   }
 
-  for (const step of plan.steps) {
-    const args = step.method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs;
-    if (step.alreadyOnchain) {
-      try {
-        const readBack = verifyEvidenceReadBack(step.alreadyOnchain.record, { incidentId: options.incidentId, artifactUrl, sha256: artifact.sha256, reporterAddress: reporter, evidenceType: step.evidenceType, expectReporterAuthorized: true });
-        steps.push({ method: step.method, evidenceType: step.evidenceType, status: "ALREADY_ONCHAIN", args, sender: step.alreadyOnchain.record.submitter, finalization: "N/A", evidenceId: step.alreadyOnchain.evidenceId, readBack });
-      } catch (error) {
-        const failure = failureOf(error, step.method);
-        failures.push(failure);
-        steps.push({ method: step.method, evidenceType: step.evidenceType, status: "FAILED", args, sender: reporter, finalization: "N/A", evidenceId: step.alreadyOnchain.evidenceId, error: failure.message, errorCode: failure.code });
-      }
-      continue;
-    }
-    if (step.method === SUBMIT_EVIDENCE) {
-      const blocked = await secondWritePrecondition(deps, { reporter, evidenceType: step.evidenceType });
+  const pending = plan.steps.filter((step) => !alreadyOnchain.has(step.method));
+  if (pending.length > 0) {
+    const authoritativePending = pending.filter((step) => isAuthoritativeType(step.evidenceType)).length;
+    for (const step of pending) {
+      if (step.method !== SUBMIT_EVIDENCE) continue;
+      const blocked = await secondWritePrecondition(deps, { reporter, evidenceType: step.evidenceType, pendingOfSameProvenance: isAuthoritativeType(step.evidenceType) ? authoritativePending : pending.length - authoritativePending });
       if (blocked) {
         failures.push(blocked);
-        steps.push({ method: step.method, evidenceType: step.evidenceType, status: "SKIPPED", args, sender: reporter, finalization: "N/A", error: blocked.message, errorCode: blocked.code });
-        break;
+        steps.push({ method: step.method, evidenceType: step.evidenceType, status: "SKIPPED", args: submitArgs, sender: reporter, finalization: "N/A", error: blocked.message, errorCode: blocked.code });
       }
     }
+    const blockedMethods = new Set(steps.filter((step) => step.status === "SKIPPED").map((step) => step.method));
+    const writable = pending.filter((step) => !blockedMethods.has(step.method));
     const preWriteIds = new Set((await deps.chain.incidentEvidenceIds(options.incidentId)).map((id) => id.toString()));
-    const stepResult = await executeStep(deps, { step, args, reporter, artifactUrl, artifactSha256: artifact.sha256, preWriteIds, failures });
-    steps.push(stepResult);
-    if (stepResult.status === "FAILED" || stepResult.status === "NOT_VERIFIED") break;
+    if (strategy === "parallel") {
+      // Short evidence windows make serialized finalization waits impossible on
+      // some Studio deployments, so both records are signed back to back and
+      // then each is waited on and read back individually.
+      const sent: Array<{ step: typeof writable[number]; submission: { txHash: string; sender: string } | undefined }> = [];
+      for (const step of writable) {
+        const args = step.method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs;
+        const submission = step.reconcileTxHash ? { txHash: step.reconcileTxHash, sender: reporter } : await sendStep(deps, { step, args, reporter, artifactUrl, artifactSha256: artifact.sha256, failures });
+        sent.push({ step, submission });
+      }
+      for (const entry of sent) {
+        if (!entry.submission) continue;
+        const args = entry.step.method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs;
+        steps.push(await settleStep(deps, { step: entry.step, args, reporter, artifactUrl, artifactSha256: artifact.sha256, txHash: entry.submission.txHash, sender: entry.submission.sender, reconciled: entry.step.reconcileTxHash !== undefined, preWriteIds, failures }));
+      }
+    }
+    else {
+      for (const step of writable) {
+        const args = step.method === ATTACH_INCIDENT_REPORT ? attachArgs : submitArgs;
+        const submission = step.reconcileTxHash ? { txHash: step.reconcileTxHash, sender: reporter } : await sendStep(deps, { step, args, reporter, artifactUrl, artifactSha256: artifact.sha256, failures });
+        if (!submission) break;
+        const stepResult = await settleStep(deps, { step, args, reporter, artifactUrl, artifactSha256: artifact.sha256, txHash: submission.txHash, sender: submission.sender, reconciled: step.reconcileTxHash !== undefined, preWriteIds, failures });
+        steps.push(stepResult);
+        if (stepResult.status === "FAILED" || stepResult.status === "NOT_VERIFIED") break;
+      }
+    }
   }
-
   result.evidenceIds = await deps.chain.incidentEvidenceIds(options.incidentId).then((ids) => ids.map((id) => id.toString())).catch(() => []);
   const attach = steps.find((step) => step.method === ATTACH_INCIDENT_REPORT);
   const submit = steps.find((step) => step.method === SUBMIT_EVIDENCE);
@@ -355,37 +362,58 @@ export async function runReporterEvidenceSubmission(deps: ReporterRunDeps): Prom
   return result;
 }
 
-async function secondWritePrecondition(deps: ReporterRunDeps, input: { reporter: string; evidenceType: EvidenceType }): Promise<ReporterFailure | undefined> {
+async function secondWritePrecondition(deps: ReporterRunDeps, input: { reporter: string; evidenceType: EvidenceType; pendingOfSameProvenance: number }): Promise<ReporterFailure | undefined> {
   const live = await deps.chain.getIncident(deps.options.incidentId);
   const now = deps.now ? deps.now() : Date.now();
   if (live.status !== "OPEN") return { code: REPORTER_PRECONDITION_CODES.incidentNotOpen, message: `incident ${deps.options.incidentId} left OPEN (${live.status}) before ${SUBMIT_EVIDENCE}`, step: SUBMIT_EVIDENCE };
   if (Number(live.evidenceDeadline) <= Math.floor(now / 1000)) return { code: REPORTER_PRECONDITION_CODES.evidenceWindowClosed, message: `incident ${deps.options.incidentId} evidence window closed before ${SUBMIT_EVIDENCE}`, step: SUBMIT_EVIDENCE };
   const records: EvidenceRecord[] = [];
   for (const id of await deps.chain.incidentEvidenceIds(deps.options.incidentId)) records.push(parseEvidenceRecord(await deps.chain.readEvidence(id)));
-  const capacity = checkReporterEvidenceCapacity({ records, reporterAddress: input.reporter, evidenceType: input.evidenceType, pending: 0 });
+  // Records this run is about to write also consume the reporter's per-provenance
+  // quota, so they are counted as pending rather than discovered only after the
+  // contract has already rejected the write.
+  const capacity = checkReporterEvidenceCapacity({ records, reporterAddress: input.reporter, evidenceType: input.evidenceType, pending: input.pendingOfSameProvenance });
   if (capacity) return { code: capacity.code, message: `reporter already has ${capacity.existing} ${input.evidenceType} record(s) for incident ${deps.options.incidentId}; the frozen per-reporter limit is ${capacity.limit}`, step: SUBMIT_EVIDENCE };
   return undefined;
 }
 
-async function executeStep(deps: ReporterRunDeps, input: { step: { method: string; evidenceType: EvidenceType; reconcileTxHash?: string }; args: readonly unknown[]; reporter: string; artifactUrl: string; artifactSha256: string; preWriteIds: Set<string>; failures: ReporterFailure[] }): Promise<StepResult> {
-  const { step, args, reporter, artifactUrl, artifactSha256, failures } = input;
-  const base: StepResult = { method: step.method, evidenceType: step.evidenceType, status: "SUBMITTED", args, sender: reporter, finalization: "NOT_VERIFIED" };
-  let txHash = step.reconcileTxHash;
-  if (txHash) base.txHash = txHash;
-  else {
+/** Verifies and records every step whose evidence already exists onchain. */
+async function resolveAlreadyOnchainSteps(deps: ReporterRunDeps, input: { plan: { steps: Array<{ method: string; evidenceType: EvidenceType; alreadyOnchain?: { evidenceId: string; record: EvidenceRecord } }> }; argsFor: (method: string) => readonly unknown[]; reporter: string; artifactUrl: string; artifactSha256: string; failures: ReporterFailure[]; steps: StepResult[] }): Promise<Set<string>> {
+  const resolved = new Set<string>();
+  for (const step of input.plan.steps) {
+    if (!step.alreadyOnchain) continue;
+    const args = input.argsFor(step.method);
     try {
-      const sent = await deps.writer.send({ method: step.method, args, value: 0n });
-      txHash = sent.txHash;
-      base.txHash = sent.txHash;
-      base.sender = sent.sender;
-      await deps.attempts.save({ incidentId: deps.options.incidentId, sha256: artifactSha256, artifactUrl, method: step.method, reporter, status: "SUBMITTED", txHash, txState: "SUBMITTED", failureCategory: null, error: null });
+      const readBack = verifyEvidenceReadBack(step.alreadyOnchain.record, { incidentId: deps.options.incidentId, artifactUrl: input.artifactUrl, sha256: input.artifactSha256, reporterAddress: input.reporter, evidenceType: step.evidenceType, expectReporterAuthorized: true });
+      input.steps.push({ method: step.method, evidenceType: step.evidenceType, status: "ALREADY_ONCHAIN", args, sender: step.alreadyOnchain.record.submitter, finalization: "N/A", evidenceId: step.alreadyOnchain.evidenceId, readBack });
+      resolved.add(step.method);
     } catch (error) {
-      const failure = failureOf(error, step.method, "REPORTER_TX_SUBMIT_FAILED");
-      failures.push(failure);
-      await deps.attempts.save({ incidentId: deps.options.incidentId, sha256: artifactSha256, artifactUrl, method: step.method, reporter, status: "FAILED", txHash: null, txState: null, failureCategory: failure.code, error: failure.message });
-      return { ...base, status: "FAILED", error: failure.message, errorCode: failure.code };
+      const failure = failureOf(error, step.method);
+      input.failures.push(failure);
+      input.steps.push({ method: step.method, evidenceType: step.evidenceType, status: "FAILED", args, sender: input.reporter, finalization: "N/A", evidenceId: step.alreadyOnchain.evidenceId, error: failure.message, errorCode: failure.code });
     }
   }
+  return resolved;
+}
+
+/** Signs one contract write and persists the attempt before any waiting. */
+async function sendStep(deps: ReporterRunDeps, input: { step: { method: string; evidenceType: EvidenceType }; args: readonly unknown[]; reporter: string; artifactUrl: string; artifactSha256: string; failures: ReporterFailure[] }): Promise<{ txHash: string; sender: string } | undefined> {
+  try {
+    const sent = await deps.writer.send({ method: input.step.method, args: input.args, value: 0n });
+    await deps.attempts.save({ incidentId: deps.options.incidentId, sha256: input.artifactSha256, artifactUrl: input.artifactUrl, method: input.step.method, reporter: input.reporter, status: "SUBMITTED", txHash: sent.txHash, txState: "SUBMITTED", failureCategory: null, error: null });
+    return { txHash: sent.txHash, sender: sent.sender };
+  } catch (error) {
+    const failure = failureOf(error, input.step.method, "REPORTER_TX_SUBMIT_FAILED");
+    input.failures.push(failure);
+    await deps.attempts.save({ incidentId: deps.options.incidentId, sha256: input.artifactSha256, artifactUrl: input.artifactUrl, method: input.step.method, reporter: input.reporter, status: "FAILED", txHash: null, txState: null, failureCategory: failure.code, error: failure.message });
+    return undefined;
+  }
+}
+
+/** Waits for one signed write to finalize and verifies its contract read-back. */
+async function settleStep(deps: ReporterRunDeps, input: { step: { method: string; evidenceType: EvidenceType }; args: readonly unknown[]; reporter: string; artifactUrl: string; artifactSha256: string; txHash: string; sender: string; reconciled?: boolean; preWriteIds: Set<string>; failures: ReporterFailure[] }): Promise<StepResult> {
+  const { step, args, reporter, artifactUrl, artifactSha256, txHash, preWriteIds, failures } = input;
+  const base: StepResult = { method: step.method, evidenceType: step.evidenceType, status: input.reconciled ? "RECONCILED" : "SUBMITTED", args, sender: input.sender, finalization: "NOT_VERIFIED", txHash };
   const outcome = await deps.tracker.waitForFinalization(txHash);
   base.txState = outcome.state;
   base.finalization = outcome.finalization;
@@ -404,7 +432,7 @@ async function executeStep(deps: ReporterRunDeps, input: { step: { method: strin
   let readBack: ReadBackVerification | undefined;
   let readBackError: ReporterFailure | undefined;
   for (const id of await deps.chain.incidentEvidenceIds(deps.options.incidentId)) {
-    if (input.preWriteIds.has(id.toString())) continue;
+    if (preWriteIds.has(id.toString())) continue;
     const record = parseEvidenceRecord(await deps.chain.readEvidence(id));
     if (record.submitter.toLowerCase() !== reporter.toLowerCase()) continue;
     if (record.evidenceType.trim().toUpperCase() !== step.evidenceType) continue;
@@ -429,5 +457,5 @@ async function executeStep(deps: ReporterRunDeps, input: { step: { method: strin
     return { ...base, status: "FAILED", evidenceId, error: readBackError.message, errorCode: readBackError.code };
   }
   await deps.attempts.save({ incidentId: deps.options.incidentId, sha256: artifactSha256, artifactUrl, method: step.method, reporter, status: "FINALIZED", txHash, txState: outcome.state, evidenceId, finalizedAt: new Date(), failureCategory: null, error: null });
-  return { ...base, status: step.reconcileTxHash ? "RECONCILED" : "SUBMITTED", evidenceId, readBack };
+  return { ...base, status: base.status, evidenceId, readBack };
 }

@@ -109,6 +109,28 @@ reported as `NOT VERIFIED`, never as a pass. Every SDK call the signer makes
 so reporter traffic obeys the same minimum interval, daily budget and cooldown
 as contract reads.
 
+Studio rejects a write whose fee value is zero, so the writer takes the fee
+distribution and fee value from the node's own fee policy before signing and
+refuses to sign if the node reports zero. Fee values are never hardcoded.
+
+### Submission strategy and short evidence windows
+
+`evidenceSubmissionStrategy` selects how the two records are written:
+
+* `sequential` (default) — sign, wait, read back, then sign the next record.
+  This is the documented order and the strongest ordering guarantee.
+* `parallel` — sign both records back to back, then wait for and read back each
+  of them individually.
+
+Use `parallel` when the protocol evidence window is shorter than two serialized
+finalization waits. The current Studio deployment grants a 60 second window
+(`incident_evidence_window_seconds`) and Studio finalization can take tens of
+seconds, so a live certification run opens its incident and signs both records
+immediately. Every verification guarantee is unchanged in `parallel` mode: each
+transaction is still waited on to a decided state, each resulting evidence
+record is still read back from contract state, and a failure in either record
+still fails the run.
+
 ### Read-back is contract state
 
 After each finalization the worker reads `get_incident_evidence_ids` and

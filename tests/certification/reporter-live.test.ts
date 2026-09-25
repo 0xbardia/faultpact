@@ -79,13 +79,25 @@ describe.skipIf(!liveEnabled)("LIVE Studio Dev signer-backed evidence proof", ()
     }
     if (prepareIncident) incidentId = await openFixtureIncident(runtime!, incidentId);
     result.incidentId = incidentId.toString();
+    const incidentState = await runtime!.adapter.getIncident(incidentId, { subsystem: "reporter_live" });
+    const deadline = Number(incidentState.evidence_deadline);
+    process.stdout.write(`INCIDENT ${incidentId} status=${String(incidentState.status)} evidence_deadline=${deadline} now=${Math.floor(Date.now() / 1000)} window_remaining_s=${deadline - Math.floor(Date.now() / 1000)}\n`);
     runtime!.deps.options = {
       incidentId,
-      summary: "faultpact phase 4.4 reporter certification",
-      description: "faultpact phase 4.4 reporter certification",
+      summary: "faultpact phase 4.4.1 reporter certification",
+      description: "faultpact phase 4.4.1 reporter certification",
       submitEvidenceType: (env.REPORTER_SUBMIT_EVIDENCE_TYPE ?? "THIRD_PARTY_MONITOR") as EvidenceType,
+      // This deployment grants a 60 second evidence window, which cannot contain
+      // two serialized finalization waits, so both records are signed back to
+      // back and each is still waited on and read back individually.
+      evidenceSubmissionStrategy: "parallel",
     };
+    const runStartedAt = Date.now();
     const outcome = await runReporterEvidenceSubmission(runtime!.deps);
+    for (const step of outcome.steps) {
+      process.stdout.write(`STEP ${step.method} status=${step.status} finalization=${step.finalization} tx=${step.txHash ?? "none"} evidence_id=${step.evidenceId ?? "none"}\n`);
+    }
+    process.stdout.write(`RUN_MS ${Date.now() - runStartedAt} window_remaining_after_s=${deadline - Math.floor(Date.now() / 1000)}\n`);
     process.stdout.write(`${formatReporterSummary(outcome, { incidentId: incidentId.toString() }).join("\n")}\n`);
     result.artifactUrl = outcome.artifact.url;
     result.sha256 = outcome.artifact.sha256;

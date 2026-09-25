@@ -11,6 +11,9 @@ This entry describes the current FaultPact release candidate. The `v1.0.0` tag a
 - Regional RPC probes, aggregation, and immutable SHA-256 evidence artifacts.
 - Bounded read API, indexer reconciliation, operations status, and PostgreSQL persistence.
 - Signer-backed evidence worker: an authorized reporter wallet can submit one canonical immutable artifact through `attach_incident_report` and `submit_evidence`, wait for GenLayer finalization, and verify the resulting evidence from contract state. Retry-safe, fail-closed, and gated on a read-only authorization preflight.
+- Live signer-backed evidence proof: incident `9` received evidence `16` and `17` from the authorized reporter `0x99FF…0580`; both transactions finalized and the contract read-back matched URI, SHA-256, submitter and provenance.
+- GenLayer SDK upgraded to `2.0.0-rc.1`; the previous pin could not submit any transaction to the current Studio node (`FeesDistributionMissing`). Fee values are now derived from the node's fee policy.
+- Back-to-back evidence submission strategy for deployments whose evidence window is shorter than two serialized finalization waits.
 - Address-typed contract reads (`is_authorized_reporter`, `get_claimable_balance`) now encode correctly against the Studio node.
 - Final pass corrections for Pact terms, exact GEN display, indexed freshness, RPC cooldowns, SEO metadata, and public error handling.
 

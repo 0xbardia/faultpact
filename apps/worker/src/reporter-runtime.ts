@@ -163,12 +163,15 @@ export function createPrismaAttemptStore(db: PrismaClient): ReporterAttemptStore
         error: record.error ?? null,
       };
       const previous = await db.evidenceSubmissionAttempt.findFirst({ where: { artifactId: artifact.id, method: record.method }, orderBy: { attemptNo: "desc" } });
+      // attemptNo is unique per artifact, not per method, so both methods that
+      // submit the same artifact continue the same numbering.
+      const lastForArtifact = await db.evidenceSubmissionAttempt.findFirst({ where: { artifactId: artifact.id }, orderBy: { attemptNo: "desc" }, select: { attemptNo: true } });
       if (!previous) {
-        await db.evidenceSubmissionAttempt.create({ data: { ...data, artifactId: artifact.id, attemptNo: 1, targetId: null, status: record.status === "SUBMITTED" ? "FINALIZING" : record.status } });
+        await db.evidenceSubmissionAttempt.create({ data: { ...data, artifactId: artifact.id, attemptNo: (lastForArtifact?.attemptNo ?? 0) + 1, targetId: null, status: record.status === "SUBMITTED" ? "FINALIZING" : record.status } });
         return;
       }
       if (record.status === "SUBMITTED" && !UNRESOLVED_STATES.has(previous.status)) {
-        await db.evidenceSubmissionAttempt.create({ data: { ...data, artifactId: artifact.id, attemptNo: previous.attemptNo + 1, targetId: null, status: "FINALIZING" } });
+        await db.evidenceSubmissionAttempt.create({ data: { ...data, artifactId: artifact.id, attemptNo: (lastForArtifact?.attemptNo ?? 0) + 1, targetId: null, status: "FINALIZING" } });
         return;
       }
       await db.evidenceSubmissionAttempt.update({ where: { id: previous.id }, data: { ...data, status: record.status === "SUBMITTED" ? "FINALIZING" : record.status } });

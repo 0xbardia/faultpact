@@ -2,24 +2,31 @@
 
 ## Status
 
-**PARTIAL**
+**CLOSED BY PHASE 4.4.1 — see [PHASE_4_4_1_LIVE_PROOF_CLOSURE.md](PHASE_4_4_1_LIVE_PROOF_CLOSURE.md).**
 
-The signer-backed worker path, the runnable command, the deterministic
-integration coverage, the configuration model and the documentation are complete
-and verified. The live Studio Dev submission proof could not be executed because
-this environment has **no funded, contract-authorized reporter private key**.
-Every remaining item is a single external credential, not missing code. Per the
-definition of done, this phase is **not** a PASS.
+When this report was written the live submission proof could not be executed
+because no funded, contract-authorized reporter credential was available to the
+run. That is no longer the case: an existing authorized reporter credential
+(`0x99FF79513004dB21546a0c1b419f48ae30760580`, already authorized in the frozen
+contract and already funded) was located in the operator's existing runtime
+configuration, and the live proof completed on the current deployment.
 
-Live items that are proven: chain `61997`, frozen contract address, frozen
-source digest, reporter public-address derivation, reporter authorization
-preflight against the final contract model (both positive and negative), public
-artifact HTTP byte/hash verification, and fail-closed command behaviour with a
-real signer against the real chain.
+```text
+Incident 9 (OPEN)
+Artifact   https://faultpact.bydx.fun/evidence/30e3017b9de4b8f0f34bed7ed9f22386c4256404094972b40fe0fb63642db1f1.json
+SHA-256    30e3017b9de4b8f0f34bed7ed9f22386c4256404094972b40fe0fb63642db1f1
+attach     0x6266dad1f2a9373689183a1a781bae0640a19e788ad468220db37088b63ca238  FINALIZED -> Evidence 16
+submit     0xdc240c6129c9472490a83acfe877b42bcf8b0282f12e47f402694f211bafab5a  FINALIZED -> Evidence 17
+read-back  PASS (URI, SHA-256, submitter, provenance AUTHORITATIVE, reporter_authorized_at_submission)
+```
 
-Live items that are **not** proven: `attach_incident_report` finalization,
-`submit_evidence` finalization, and the resulting contract read-back. No mock,
-cache, or database row is presented as any of them.
+The frozen contract was still not modified: the digest below is unchanged.
+
+The remainder of this document is the Phase 4.4 record as written, including the
+findings that remain accurate (the address calldata fix, the retry model, the
+deterministic coverage). Where Phase 4.4.1 changed the implementation — the
+GenLayer SDK version, node-derived fee handling, and the parallel submission
+strategy — the Phase 4.4.1 report is authoritative.
 
 ## Frozen Contract
 

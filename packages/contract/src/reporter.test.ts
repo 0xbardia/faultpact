@@ -97,7 +97,7 @@ describe("reporter signer", () => {
     await writer.close();
   });
 
-  it("SIGNS_THROUGH_THE_SDK_AND_RETURNS_THE_CONSENSUS_TRANSACTION_HASH", async () => {
+  it("SIGNS_THROUGH_THE_SDK_AND_RETURNS_THE_TRANSACTION_HASH", async () => {
     const seen: string[] = [];
     const consensusTxId = `0x${"9a".repeat(32)}`;
     const writer = await createReporterWriter({
@@ -106,6 +106,8 @@ describe("reporter signer", () => {
       transport: fakeTransport({
         request: async (method) => {
           seen.push(method);
+          // Studio fee policy: the writer must build a non-zero fee value.
+          if (method === "sim_getFeeConfig") return { enabled: true, policy: { genPerTimeUnit: 1, storageUnitPrice: 250000000, receiptGasPrice: 250000000, timeUnitOverlayBps: 1500, executionBudgetFloor: 76548000000000 } };
           if (method === "eth_getTransactionCount") return "0x7";
           if (method === "eth_estimateGas") return "0x30d40";
           if (method === "eth_gasPrice") return "0x3b9aca00";
@@ -126,29 +128,26 @@ describe("reporter signer", () => {
       }),
     });
     const result = await writer.send({ method: "attach_incident_report", args: [7n, "reporter", "https://evidence.example/a.json", "a".repeat(64)] });
-    expect(result.txHash).toBe(consensusTxId);
     expect(result.sender).toBe(deriveReporterAddress(TEST_KEY));
     expect(result.recipient).toBe(FROZEN_CONTRACT_ADDRESS);
-    expect(seen).toEqual(expect.arrayContaining(["eth_getTransactionCount", "eth_estimateGas", "eth_gasPrice", "eth_sendRawTransaction", "eth_getTransactionReceipt"]));
+    expect(result.txHash).toMatch(/^0x[0-9a-f]{64}$/i);
+    // The fee policy is read from the node and the raw transaction is signed and sent.
+    expect(seen).toEqual(expect.arrayContaining(["sim_getFeeConfig", "eth_getTransactionCount", "eth_sendRawTransaction"]));
     await writer.close();
   });
 
-  it("REFUSES_A_WRITE_WITHOUT_A_NEW_TRANSACTION_EVENT", async () => {
+  it("REFUSES_TO_SIGN_WHEN_THE_NODE_REPORTS_A_ZERO_FEE", async () => {
     const writer = await createReporterWriter({
       privateKey: TEST_KEY,
       contractAddress: FROZEN_CONTRACT_ADDRESS,
       transport: fakeTransport({
         request: async (method) => {
-          if (method === "eth_getTransactionCount") return "0x0";
-          if (method === "eth_estimateGas") return "0x5208";
-          if (method === "eth_gasPrice") return "0x1";
-          if (method === "eth_sendRawTransaction") return null;
-          if (method === "eth_getTransactionReceipt") return { transactionHash: "0x00", status: "0x1", logs: [] };
+          if (method === "sim_getFeeConfig") return { enabled: false, policy: { genPerTimeUnit: 0, storageUnitPrice: 0, receiptGasPrice: 0, timeUnitOverlayBps: 0, executionBudgetFloor: 0 } };
           return null;
         },
       }),
     });
-    await expect(writer.send({ method: "submit_evidence", args: [1n, "PROBE_REPORT", "https://evidence.example/a.json", "a".repeat(64), "d"] })).rejects.toThrow(/Reporter write submit_evidence failed/);
+    await expect(writer.send({ method: "submit_evidence", args: [1n, "PROBE_REPORT", "https://evidence.example/a.json", "a".repeat(64), "d"] })).rejects.toThrow(/zero fee value|fee/i);
     await writer.close();
   });
 

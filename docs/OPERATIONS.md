@@ -291,6 +291,19 @@ frozen contract's own `open_incident` instead of supplying an existing one. This
 uses existing contract functionality, mutates no governance state, and attaches
 no opener evidence.
 
+This deployment grants a 60 second evidence window and Studio finalization can
+take tens of seconds, so the live suite opens the incident and signs both
+records back to back (`evidenceSubmissionStrategy: "parallel"`). Allow a few
+minutes of total wall-clock time and expect the window to be spent, not left
+open. Lower `GENLAYER_RPC_MIN_INTERVAL_MS` for the certification run so the
+preflight reads do not consume the window; the transport still honours 429,
+`Retry-After` and its daily budget.
+
+The last completed live proof is recorded in
+[PHASE_4_4_1_LIVE_PROOF_CLOSURE.md](PHASE_4_4_1_LIVE_PROOF_CLOSURE.md):
+incident `9`, evidence `16` and `17`, both transactions `FINALIZED`, contract
+read-back `PASS`.
+
 ### 10. Verify the public transaction and evidence result
 
 ```bash
