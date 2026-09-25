@@ -252,6 +252,32 @@ attach before the window closed, and the worker refused the second write with
 | `README.md` | live proof result and the updated reproduction command |
 | `CHANGELOG.md` | live signer-backed submission entry |
 
+## Reproducibility
+
+The proof was executed twice end to end, on two independently prepared
+incidents, and both passed:
+
+| Run | Incident | Evidence IDs | Attach tx | Submit tx | Read-back |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `9` | `16`, `17` | `0x6266dad1f2a9373689183a1a781bae0640a19e788ad468220db37088b63ca238` | `0xdc240c6129c9472490a83acfe877b42bcf8b0282f12e47f402694f211bafab5a` | PASS |
+| 2 | `11` | `20`, `21` | `0x6a86cd316109fd04f3ecf322dccad70304508c3046d669432abf7476758d5611` | `0xbb9c4213911addfea70c4acb5f2fbf247ea92a62789efd516c06685ef22a33bd` | PASS |
+
+Both runs used the same reporter, the same code path and the same command, and
+each produced exactly two evidence records with the matching artifact URI,
+SHA-256, submitter and `AUTHORITATIVE` provenance. Neither run created a
+duplicate: `get_incident_evidence_ids(9)` is `[16, 17]` and
+`get_incident_evidence_ids(11)` is `[20, 21]`.
+
+Honest variance: intermediate diagnostic runs (incidents 4, 5, 6, 7, 8 and 10)
+did not complete the pair. In each of those the `open_incident` transaction
+took long enough that most of the 60 second evidence window was already spent
+before the writes began, and the worker refused the second write with
+`EVIDENCE_WINDOW_CLOSED` instead of spending a signed transaction. Those
+incidents show exactly one finalized `attach_incident_report` record and one
+attempt row left in `SUBMITTED`, which is the intended fail-closed behaviour.
+The success rate therefore depends on Studio consensus latency, not on the
+worker: two of eight attempts had a fast `open_incident` and passed.
+
 ## Remaining limitations
 
 1. The Studio evidence window is 60 seconds and Studio finalization latency
